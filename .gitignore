@@ -1,0 +1,94 @@
+# ===================================
+# Omnichat - Git Ignore Configuration
+# ===================================
+
+# --- Dependencies ---
+node_modules/
+.pnpm-store/
+.pnpm*.log
+
+# --- Build outputs ---
+dist/
+build/
+*.tsbuildinfo
+*.tsbuildinfo.*
+
+# --- Environment files (CRITICAL: Contains secrets!) ---
+.env
+.env.local
+.env.*.local
+*.env
+packages/examples/.env
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# --- OS Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# --- IDE & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Test Coverage ---
+coverage/
+.nyc_output/
+*.lcov
+
+# --- Temporary Files ---
+*.tmp
+*.temp
+.cache/
+
+# --- Storage (User uploaded media files) ---
+storage/
+packages/*/storage/
+
+# --- Bot Runtime Files ---
+*.pid
+bot.log
+packages/examples/logs/
+packages/examples/*.pid
+
+# --- Compiled Files ---
+packages/*/dist/
+*.js
+*.d.ts
+*.js.map
+*.d.ts.map
+!**/src/*.ts
+
+# --- Development Scripts (optional) ---
+build.sh
+test.sh
+.claude/
+
+# ===================================
+# END OF GITIGNORE
+# ===================================
+
+# --- Keep these ---
+!.gitignore
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!README.md
+!LICENSE
+!tsconfig.base.json
+!docs/

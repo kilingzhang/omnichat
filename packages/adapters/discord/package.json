@@ -1,0 +1,46 @@
+{
+  "name": "@omnichat/discord",
+  "version": "0.1.0",
+  "description": "Discord adapter for Universal IM SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:unit": "vitest run src/**/*.test.ts",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "adapter",
+    "im-sdk"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@omnichat/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "discord.js": "^14.14.0"
+  },
+  "peerDependenciesMeta": {
+    "discord.js": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0",
+    "@vitest/coverage-v8": "^1.2.0"
+  }
+}

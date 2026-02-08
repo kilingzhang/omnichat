@@ -1,0 +1,40 @@
+{
+  "name": "@omnichat/example",
+  "version": "0.1.0",
+  "description": "Example usage of Universal IM SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/simple-bot.js",
+    "dev": "tsx src/simple-bot.ts",
+    "start:bg": "bash start-bg.sh",
+    "stop": "bash stop.sh",
+    "status": "bash status.sh",
+    "logs": "bash logs.sh"
+  },
+  "dependencies": {
+    "@omnichat/core": "workspace:*",
+    "@omnichat/telegram": "workspace:*"
+  },
+  "peerDependencies": {
+    "node-telegram-bot-api": "^0.65.0"
+  },
+  "peerDependenciesMeta": {
+    "node-telegram-bot-api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

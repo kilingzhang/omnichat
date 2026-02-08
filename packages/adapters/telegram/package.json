@@ -1,0 +1,47 @@
+{
+  "name": "@omnichat/telegram",
+  "version": "0.1.0",
+  "description": "Telegram adapter for Omnichat",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:unit": "vitest run src/**/*.test.ts",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "adapter",
+    "omnichat"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@omnichat/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "node-telegram-bot-api": "^0.65.0"
+  },
+  "peerDependenciesMeta": {
+    "node-telegram-bot-api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^1.2.0",
+    "@types/node": "^20.11.0",
+    "@types/node-telegram-bot-api": "^0.63.3",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}

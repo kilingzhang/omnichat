@@ -1,0 +1,43 @@
+{
+  "name": "@omnichat/core",
+  "version": "0.1.0",
+  "description": "Omnichat Core SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:unit": "vitest run src/**/*.test.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run integration/**/*.test.ts"
+  },
+  "keywords": [
+    "omnichat",
+    "omnichannel",
+    "sdk",
+    "bot",
+    "chatbot",
+    "messaging",
+    "telegram",
+    "discord",
+    "slack",
+    "whatsapp",
+    "multi-platform"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}
