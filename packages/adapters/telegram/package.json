@@ -30,7 +30,7 @@
     "@omnichat/core": "workspace:*"
   },
   "peerDependencies": {
-    "node-telegram-bot-api": "^0.65.0"
+    "node-telegram-bot-api": "^0.67.0"
   },
   "peerDependenciesMeta": {
     "node-telegram-bot-api": {
@@ -38,10 +38,10 @@
     }
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/coverage-v8": "^4.0.0",
     "@types/node": "^20.11.0",
-    "@types/node-telegram-bot-api": "^0.63.3",
+    "@types/node-telegram-bot-api": "^0.64.5",
     "typescript": "^5.3.3",
-    "vitest": "^1.2.0"
+    "vitest": "^4.0.0"
   }
 }

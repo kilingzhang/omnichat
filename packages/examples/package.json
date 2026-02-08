@@ -25,7 +25,7 @@
     "@omnichat/telegram": "workspace:*"
   },
   "peerDependencies": {
-    "node-telegram-bot-api": "^0.65.0"
+    "node-telegram-bot-api": "^0.67.0"
   },
   "peerDependenciesMeta": {
     "node-telegram-bot-api": {
