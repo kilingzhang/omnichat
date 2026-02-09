@@ -146,6 +146,11 @@ export interface SendContent {
  * Send options
  */
 export interface SendOptions {
+  // Target type (optional, but recommended for platforms with ambiguous IDs like QQ/WeChat)
+  // For platforms that can infer type (Telegram with @username, Feishu with oc_ prefix), this can be omitted
+  // Once specified for an ID, the adapter will remember it for future use
+  targetType?: TargetType;
+
   // Reply to specific message
   replyToMessageId?: string;
 

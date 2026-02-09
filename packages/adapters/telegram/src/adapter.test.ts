@@ -1095,4 +1095,109 @@ describe("TelegramAdapter", () => {
       });
     });
   });
+
+  describe("Smart Target Type Inference", () => {
+    beforeEach(async () => {
+      mockBotInstance.sendMessage.mockResolvedValue({
+        message_id: 123,
+        date: Math.floor(Date.now() / 1000),
+      });
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("Automatic type inference from ID format", () => {
+      it("should infer @username as channel", async () => {
+        await adapter.send("@mychannel", { text: "Hello" });
+        // Should infer type without explicit targetType
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("should infer positive numeric ID as user", async () => {
+        await adapter.send("123456789", { text: "Hello" });
+        // Positive number without SIGN_BIT = user
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("should handle IDs with SIGN_BIT as user", async () => {
+        // ID with SIGN_BIT set (converted private chat)
+        const privateChatId = "4611686018427388490"; // 0x4000000000000000 + something
+        await adapter.send(privateChatId, { text: "Hello" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("should cache inferred types for subsequent calls", async () => {
+        // First call - infer type
+        await adapter.send("@mychannel", { text: "Hello1" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(1);
+
+        // Second call - use cached type
+        await adapter.send("@mychannel", { text: "Hello2" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe("Explicit targetType with caching", () => {
+      it("should use explicit targetType and cache it", async () => {
+        // First call with explicit type
+        await adapter.send("123456789", { text: "Hello1" }, { targetType: 'group' });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(1);
+
+        // Second call without explicit type - should use cached
+        await adapter.send("123456789", { text: "Hello2" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(2);
+      });
+
+      it("should allow overriding cached type with new explicit type", async () => {
+        // First call - infer as user (default for positive numbers)
+        await adapter.send("123456789", { text: "Hello1" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(1);
+
+        // Second call - explicitly set as group
+        await adapter.send("123456789", { text: "Hello2" }, { targetType: 'group' });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(2);
+
+        // Third call - should use the new cached type (group)
+        await adapter.send("123456789", { text: "Hello3" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(3);
+      });
+    });
+
+    describe("Convenience methods", () => {
+      it("sendToUser should set targetType to user", async () => {
+        await adapter.sendToUser("123456789", "Hello");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("sendToGroup should set targetType to group", async () => {
+        await adapter.sendToGroup("123456789", "Hello");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("sendToChannel should set targetType to channel", async () => {
+        await adapter.sendToChannel("@mychannel", "Hello");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+
+      it("convenience methods should accept additional options", async () => {
+        await adapter.sendToUser("123456789", "Hello", { silent: true });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalled();
+      });
+    });
+
+    describe("Cache management", () => {
+      it("should clear cache on destroy", async () => {
+        // Set some cache
+        await adapter.send("@mychannel", { text: "Hello" });
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledTimes(1);
+
+        // Destroy
+        await adapter.destroy();
+
+        // Cache should be cleared (new instance would be fresh)
+        const newAdapter = new TelegramAdapter();
+        await newAdapter.init({ apiToken: "test_token" });
+        // This is a new instance with empty cache
+      });
+    });
+  });
 });

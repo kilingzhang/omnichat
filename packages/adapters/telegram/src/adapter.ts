@@ -93,6 +93,39 @@ function publicIdToTelegramId(publicId: string | number): string {
 }
 
 /**
+ * 智能推断目标类型（从 ID 格式）
+ *
+ * @param id - 目标 ID
+ * @returns 推断的类型，如果无法推断则返回 null
+ */
+function inferTargetType(id: string): TargetType | null {
+  // @username 公开用户名/频道/群组
+  if (id.startsWith('@')) {
+    // 进一步判断：频道通常有特定的命名模式，但很难100%确定
+    // 这里保守处理：@username 都当作 channel，用户可以通过 targetType 覆盖
+    return 'channel';
+  }
+
+  // 纯数字 ID - 根据正负号和标记位判断
+  const num = parseInt(id, 10);
+  if (!isNaN(num)) {
+    // 检查是否有私聊标记位（第62位为1）
+    if ((num & SIGN_BIT) !== 0) {
+      return 'user';  // 私聊（有高位标记）
+    }
+    // 普通正数 = 用户
+    if (num > 0 && num < SIGN_BIT) {
+      return 'user';
+    }
+    // 其他情况当作群组
+    return 'group';
+  }
+
+  // 无法推断
+  return null;
+}
+
+/**
  * Telegram adapter configuration
  */
 export interface TelegramConfig extends AdapterConfig {
@@ -111,6 +144,8 @@ export class TelegramAdapter implements FullAdapter {
   private config?: TelegramConfig;
   private messageCallback?: (message: Message) => void;
   private capabilities: Capabilities;
+  // Cache for inferred target types to avoid repeated lookups
+  private targetTypeCache = new Map<string, TargetType>();
 
   constructor() {
     this.capabilities = {
@@ -172,6 +207,12 @@ export class TelegramAdapter implements FullAdapter {
     if (!content.text && !content.mediaUrl && !content.stickerId && !content.buttons && !content.poll) {
       throw new Error("Either text, mediaUrl, stickerId, buttons, or poll is required");
     }
+
+    // 智能处理目标类型
+    const targetType = this.resolveTargetType(target, options?.targetType);
+
+    // 如果 targetType 提供了额外的验证，可以在这里使用
+    // 目前 Telegram 可以从 ID 格式推断，所以不需要额外处理
 
     // 将统一的正数 ID 转换回 Telegram ID（群组时转回负数）
     const telegramTarget = publicIdToTelegramId(target);
@@ -1698,6 +1739,61 @@ export class TelegramAdapter implements FullAdapter {
     }
     this.bot = null;
     this.messageCallback = undefined;
+    this.targetTypeCache.clear(); // Clear cache on destroy
+  }
+
+  /**
+   * 解析目标类型，支持缓存和智能推断
+   *
+   * @param target - 目标 ID
+   * @param explicitType - 用户明确指定的类型
+   * @returns 推断的目标类型
+   * @throws 当无法推断且未明确指定时抛出错误
+   */
+  private resolveTargetType(target: string, explicitType?: TargetType): TargetType {
+    // 1. 用户明确指定了类型 - 记住并返回
+    if (explicitType) {
+      this.targetTypeCache.set(target, explicitType);
+      return explicitType;
+    }
+
+    // 2. 从缓存查找
+    const cached = this.targetTypeCache.get(target);
+    if (cached) {
+      return cached;
+    }
+
+    // 3. 尝试从 ID 格式推断
+    const inferred = inferTargetType(target);
+    if (inferred) {
+      this.targetTypeCache.set(target, inferred);
+      return inferred;
+    }
+
+    // 4. 实在无法推断 - 返回默认值（Telegram 大多数情况下可以推断到这里）
+    // 对于 Telegram，如果到这里，说明是非常规 ID，保守处理
+    return 'user'; // 默认当作用户
+  }
+
+  /**
+   * 便捷方法：发送消息给用户
+   */
+  async sendToUser(userId: string, text: string, options?: Omit<SendOptions, 'targetType'>): Promise<SendResult> {
+    return this.send(userId, { text }, { ...options, targetType: 'user' });
+  }
+
+  /**
+   * 便捷方法：发送消息到群组
+   */
+  async sendToGroup(groupId: string, text: string, options?: Omit<SendOptions, 'targetType'>): Promise<SendResult> {
+    return this.send(groupId, { text }, { ...options, targetType: 'group' });
+  }
+
+  /**
+   * 便捷方法：发送消息到频道
+   */
+  async sendToChannel(channelId: string, text: string, options?: Omit<SendOptions, 'targetType'>): Promise<SendResult> {
+    return this.send(channelId, { text }, { ...options, targetType: 'channel' });
   }
 
   /**
