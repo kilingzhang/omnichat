@@ -13,12 +13,16 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/simple-bot.js",
-    "dev": "tsx src/simple-bot.ts",
+    "start": "node dist/unified-bot.js",
+    "dev": "tsx src/unified-bot.ts",
+    "dev:simple": "tsx src/simple-bot.ts",
+    "dev:chat": "tsx src/telegram-chat-management.ts",
+    "dev:smart": "tsx src/smart-type-inference-example.ts",
     "start:bg": "bash start-bg.sh",
     "stop": "bash stop.sh",
+    "restart": "bash restart.sh",
     "status": "bash status.sh",
-    "logs": "bash logs.sh"
+    "logs": "bash logs-enhanced.sh"
   },
   "dependencies": {
     "@omnichat/core": "workspace:*",

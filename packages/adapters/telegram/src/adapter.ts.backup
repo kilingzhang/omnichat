@@ -136,10 +136,6 @@ export interface TelegramConfig extends AdapterConfig {
   apiToken: string;
   webhookUrl?: string;
   polling?: boolean;
-  // Performance optimization options
-  enableCache?: boolean;  // Enable API response caching (default: false for backward compatibility)
-  enableQueue?: boolean;  // Enable request queue (default: false for backward compatibility)
-  queueConcurrency?: number;  // Max concurrent requests in queue (default: 5)
 }
 
 /**
@@ -154,9 +150,6 @@ export class TelegramAdapter implements FullAdapter {
   private capabilities: Capabilities;
   // Cache for inferred target types to avoid repeated lookups
   private targetTypeCache = new Map<string, TargetType>();
-  // Optional performance optimization features (lazy loaded)
-  private cachedClient: any = null;  // CachedTelegramClient
-  private requestQueue: any = null;  // RequestQueue
 
   constructor() {
     this.capabilities = {
@@ -166,13 +159,6 @@ export class TelegramAdapter implements FullAdapter {
       discovery: { history: false, search: false, pins: false, memberInfo: true, channelInfo: true },
       management: { kick: true, ban: true, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: true },
     };
-  }
-
-  /**
-   * Get the bot client (with optional caching wrapper)
-   */
-  private getBot(): any {
-    return this.cachedClient || this.bot;
   }
 
   async init(config: AdapterConfig): Promise<void> {
@@ -189,20 +175,6 @@ export class TelegramAdapter implements FullAdapter {
       this.bot = new TelegramBot(this.config.apiToken, {
         polling: this.config.polling !== false,
       });
-
-      // Initialize optional performance features
-      if (this.config.enableCache) {
-        const { CachedTelegramClient } = await import('./client/cached-client.js');
-        this.cachedClient = new CachedTelegramClient(this.bot);
-      }
-
-      if (this.config.enableQueue) {
-        const { createQueue } = await import('@omnichat/core');
-        this.requestQueue = createQueue(
-          this.config.queueConcurrency || 5,
-          30  // Telegram rate limit: 30 requests per second
-        );
-      }
 
       if (this.config.webhookUrl) {
         await this.bot.setWebHook(this.config.webhookUrl);
@@ -1772,16 +1744,6 @@ export class TelegramAdapter implements FullAdapter {
     this.bot = null;
     this.messageCallback = undefined;
     this.targetTypeCache.clear(); // Clear cache on destroy
-
-    // Clean up performance features
-    if (this.cachedClient) {
-      this.cachedClient.clearCache();
-      this.cachedClient = null;
-    }
-    if (this.requestQueue) {
-      this.requestQueue.clear();
-      this.requestQueue = null;
-    }
   }
 
   /**

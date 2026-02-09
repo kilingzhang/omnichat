@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop simple-bot
+# Stop unified-bot
 
 cd "$(dirname "$0")"
 

@@ -1,0 +1,15 @@
+# Runtime files
+bot.pid
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Storage
+storage/
+
+# Build
+dist/

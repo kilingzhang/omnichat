@@ -65,10 +65,28 @@ export {
   validateRequired,
   validateAtLeastOne,
   safeExecute,
-  withRetry,
   truncateText,
   formatError,
 } from "./utils/adapter-utils.js";
+export { SimpleCache, createCache } from "./utils/cache.js";
+export {
+  withRetry,
+  delay,
+  isRateLimitError,
+  extractRetryAfter,
+  TokenBucket,
+  withRateLimit,
+  type RetryOptions,
+} from "./utils/rate-limit.js";
+export { RequestQueue, createQueue } from "./utils/queue.js";
+export {
+  CircuitBreaker,
+  CircuitBreakerState,
+  resilientExecute,
+  withResilience,
+  type CircuitBreakerOptions,
+  type ResilientOptions,
+} from "./utils/resilient.js";
 
 // Storage
 export type {

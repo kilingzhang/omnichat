@@ -13,7 +13,8 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { TelegramAdapter } from "../src/adapter.js";
-import { withRetry, delay, getTestDelay } from "../src/rate-limit.js";
+import { withRetry, delay } from "@omnichat/core";
+import { getTestDelay } from "./test-utils.js";
 
 describe("TelegramAdapter Interactive Features Integration Tests", () => {
   let adapter: TelegramAdapter;

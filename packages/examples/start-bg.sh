@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start simple-bot in background
+# Start unified-bot in background
 
 cd "$(dirname "$0")"
 
@@ -20,8 +20,8 @@ fi
 mkdir -p logs
 
 # Start bot in background
-echo "🚀 Starting simple-bot in background..."
-nohup node dist/simple-bot.js > logs/bot.log 2>&1 &
+echo "🚀 Starting unified-bot in background..."
+nohup node dist/unified-bot.js > logs/bot.log 2>&1 &
 PID=$!
 
 # Save PID
@@ -35,3 +35,5 @@ echo "📊 Commands:"
 echo "   pnpm status   - Show bot status"
 echo "   pnpm logs     - View live logs"
 echo "   pnpm stop     - Stop the bot"
+echo ""
+echo "💡 View logs: tail -f logs/bot.log"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Show simple-bot status
+# Show unified-bot status
 
 cd "$(dirname "$0")"
 
