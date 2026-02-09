@@ -89,8 +89,11 @@ function publicIdToTelegramId(publicId: string | number): string {
     return String(id & ABS_MASK);
   }
 
-  // 群组：转回负数
-  return String(-id);
+  // 没有标记位：直接返回原值
+  // 可能是：
+  // - 群组 ID（负数）：如 -5175020124
+  // - 用户 ID（正数，无标记）：如 5540291904
+  return String(id);
 }
 
 /**
