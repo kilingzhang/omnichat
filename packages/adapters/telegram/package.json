@@ -17,6 +17,8 @@
     "test": "vitest",
     "test:unit": "vitest run --reporter=verbose src/adapter.test.ts",
     "test:integration": "vitest run --reporter=verbose integration/chat-management.integration.test.ts",
+    "test:integration:smart": "vitest run --reporter=verbose integration/smart-type-inference.integration.test.ts",
+    "test:all": "vitest run --reporter=verbose",
     "test:coverage": "vitest run --coverage"
   },
   "keywords": [

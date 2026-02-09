@@ -13,6 +13,7 @@ import type {
   Participant,
   ReplyReference,
   ThreadInfo,
+  TargetType,
 } from "@omnichat/core";
 
 // Import function - can be mocked in tests
