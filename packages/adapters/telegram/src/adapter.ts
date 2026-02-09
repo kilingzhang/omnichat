@@ -7,15 +7,90 @@ import type {
   PollInput,
   PollResult,
   ChatAction,
-} from "@omnichat/core";
-import type {
+  Capabilities,
   Message,
   MessageContent,
   Participant,
   ReplyReference,
   ThreadInfo,
 } from "@omnichat/core";
-import type { Capabilities } from "@omnichat/core";
+
+// Import function - can be mocked in tests
+let importTelegramBot: () => Promise<any> = async () => {
+  const { default: TelegramBot } = await import("node-telegram-bot-api");
+  return TelegramBot;
+};
+
+// Expose mock function only in test environment (not part of public API)
+if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+  (globalThis as any).__setImportTelegramBot = (fn: () => Promise<any>) => {
+    importTelegramBot = fn;
+  };
+}
+
+// ============================================================================
+// Chat ID Conversion - 统一使用正数对外，内部转换为负数
+// ============================================================================
+
+/**
+ * Telegram 的 Chat ID 规则：
+ * - 正数: 私聊（个人用户）
+ * - 负数: 群组/频道/超级群组
+ *
+ * 为了用户友好，我们统一对外使用正数。
+ * 为了避免 ID 冲突，我们在高比特位存储符号信息：
+ * - 私聊 ID: 保持原值（正数）
+ * - 群组 ID: 将负数转为正数，但在高位设置标记位
+ *
+ * 编码方案：
+ * - 私聊: 0x4000000000000000 + id（设置第62位为1）
+ * - 群组: abs(id)（直接使用绝对值）
+ *
+ * 这样可以完全避免冲突，因为：
+ * - 私聊 ID 会有 0x4 前缀（大于 2^62）
+ * - 群组 ID 没有前缀（绝对值）
+ * - 两者范围完全不重叠
+ */
+const SIGN_BIT = 0x4000000000000000; // 2^62 - 用于标记私聊 ID
+const ABS_MASK = 0x3FFFFFFFFFFFFFFF; // 掩码：用于提取实际的 ID 值
+
+/**
+ * 将 Telegram Chat ID（可能是负数）转换为统一的正数 ID
+ *
+ * @param telegramId - Telegram 原始 Chat ID（正数为私聊，负数为群组）
+ * @returns 统一的正数 ID（私聊有高位标记，群组为绝对值）
+ */
+function telegramIdToPublicId(telegramId: string | number): string {
+  const id = typeof telegramId === 'string' ? parseInt(telegramId, 10) : telegramId;
+
+  if (id > 0) {
+    // 私聊：在高比特位设置标记位
+    // 这样 1234567890 → 4611686018427388490
+    return String(SIGN_BIT | (id & ABS_MASK));
+  }
+
+  // 群组/频道：返回绝对值（没有标记位）
+  return String(Math.abs(id));
+}
+
+/**
+ * 将统一的正数 ID 转换回 Telegram Chat ID
+ *
+ * @param publicId - 统一的正数 ID（可能包含高位标记）
+ * @returns Telegram 原始 Chat ID（私聊为正数，群组为负数）
+ */
+function publicIdToTelegramId(publicId: string | number): string {
+  const id = typeof publicId === 'string' ? parseInt(publicId, 10) : publicId;
+
+  // 检查是否有私聊标记位（第62位为1）
+  if ((id & SIGN_BIT) !== 0) {
+    // 私聊：去掉标记位，返回正数
+    return String(id & ABS_MASK);
+  }
+
+  // 群组：转回负数
+  return String(-id);
+}
 
 /**
  * Telegram adapter configuration
@@ -42,8 +117,8 @@ export class TelegramAdapter implements FullAdapter {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: true, edit: true, delete: true, threads: true, quote: true },
       interaction: { buttons: true, polls: true, reactions: true, stickers: true, effects: true },
-      discovery: { history: false, search: false, pins: false, memberInfo: false, channelInfo: false },
-      management: { kick: false, ban: false, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: false },
+      discovery: { history: false, search: false, pins: false, memberInfo: true, channelInfo: true },
+      management: { kick: true, ban: true, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: true },
     };
   }
 
@@ -55,8 +130,9 @@ export class TelegramAdapter implements FullAdapter {
     }
 
     try {
-      // Import node-telegram-bot-api
-      const { default: TelegramBot } = await import("node-telegram-bot-api");
+      // Import using the import function (can be mocked in tests)
+      const TelegramBot = await importTelegramBot();
+
       this.bot = new TelegramBot(this.config.apiToken, {
         polling: this.config.polling !== false,
       });
@@ -96,6 +172,9 @@ export class TelegramAdapter implements FullAdapter {
     if (!content.text && !content.mediaUrl && !content.stickerId && !content.buttons && !content.poll) {
       throw new Error("Either text, mediaUrl, stickerId, buttons, or poll is required");
     }
+
+    // 将统一的正数 ID 转换回 Telegram ID（群组时转回负数）
+    const telegramTarget = publicIdToTelegramId(target);
 
     const opts: any = {
       parse_mode: options?.parseMode === "markdown" ? "Markdown" : options?.parseMode === "html" ? "HTML" : undefined,
@@ -168,23 +247,23 @@ export class TelegramAdapter implements FullAdapter {
         const mediaType = content.mediaType || "image";
 
         if (mediaType === "video") {
-          result = await this.bot.sendVideo(target, content.mediaUrl, {
+          result = await this.bot.sendVideo(telegramTarget, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else if (mediaType === "audio") {
-          result = await this.bot.sendAudio(target, content.mediaUrl, {
+          result = await this.bot.sendAudio(telegramTarget, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else if (mediaType === "file") {
-          result = await this.bot.sendDocument(target, content.mediaUrl, {
+          result = await this.bot.sendDocument(telegramTarget, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else {
           // Default to photo for images
-          result = await this.bot.sendPhoto(target, content.mediaUrl, {
+          result = await this.bot.sendPhoto(telegramTarget, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
@@ -192,19 +271,19 @@ export class TelegramAdapter implements FullAdapter {
       }
       // Send text
       else if (content.text) {
-        result = await this.bot.sendMessage(target, content.text, opts);
+        result = await this.bot.sendMessage(telegramTarget, content.text, opts);
       } else {
         throw new Error("Either text, mediaUrl, stickerId, buttons, or poll is required");
       }
 
       return {
         platform: this.platform,
-        messageId: `${target}:${result.message_id}`,
-        chatId: target,
+        messageId: `${telegramTarget}:${result.message_id}`,
+        chatId: telegramIdToPublicId(telegramTarget), // 返回正数 ID 给用户
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to send message to ${target}:`, error);
+      console.error(`Failed to send message to ${telegramTarget}:`, error);
       throw error;
     }
   }
@@ -577,6 +656,1042 @@ export class TelegramAdapter implements FullAdapter {
     return this.capabilities;
   }
 
+  /**
+   * Get chat information
+   * @param chatId - Chat ID or username (e.g., @channelusername)
+   * @returns Promise resolving to chat information
+   */
+  async getChat(chatId: string): Promise<{
+    id: string;
+    name: string;
+    type: "user" | "channel" | "group";
+    topic?: string;
+    memberCount?: number;
+    username?: string;
+    description?: string;
+    inviteLink?: string;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const chatInfo = await this.bot.getChat(chatId);
+
+      return {
+        id: chatInfo.id.toString(),
+        name: chatInfo.title || chatInfo.username || chatInfo.first_name || chatId,
+        type: chatInfo.type === "supergroup" || chatInfo.type === "group" ? "group" :
+              chatInfo.type === "channel" ? "channel" : "user",
+        username: chatInfo.username,
+        description: chatInfo.description,
+        inviteLink: chatInfo.invite_link,
+      };
+    } catch (error) {
+      console.error(`Failed to get chat info for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get chat member count
+   * @param chatId - Chat ID or username
+   * @returns Promise resolving to member count
+   */
+  async getChatMemberCount(chatId: string): Promise<number> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const count = await this.bot.getChatMemberCount(chatId);
+      return count;
+    } catch (error) {
+      console.error(`Failed to get chat member count for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get information about a chat member
+   * @param chatId - Chat ID or username
+   * @param userId - User ID
+   * @returns Promise resolving to member information
+   */
+  async getChatMember(chatId: string, userId: string): Promise<{
+    id: string;
+    name: string;
+    username?: string;
+    avatar?: string;
+    roles?: string[];
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const memberInfo = await this.bot.getChatMember(chatId, parseInt(userId, 10));
+      const user = memberInfo.user;
+
+      // Extract roles from status
+      const roles: string[] = [];
+      if (memberInfo.status === "creator") {
+        roles.push("owner");
+      } else if (memberInfo.status === "administrator") {
+        roles.push("administrator");
+      } else if (memberInfo.status === "restricted") {
+        roles.push("restricted");
+      } else if (memberInfo.status === "left" || memberInfo.status === "kicked") {
+        roles.push(memberInfo.status);
+      }
+
+      return {
+        id: user.id.toString(),
+        name: `${user.first_name || ""}${user.last_name ? ` ${user.last_name}` : ""}`.trim() || user.username || userId,
+        username: user.username,
+        avatar: user.photo?.small_file_id || undefined,
+        roles,
+      };
+    } catch (error) {
+      console.error(`Failed to get chat member ${userId} from ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get chat administrators
+   * @param chatId - Chat ID or username
+   * @returns Promise resolving to array of administrators
+   */
+  async getChatAdministrators(chatId: string): Promise<Array<{
+    id: string;
+    name: string;
+    username?: string;
+    roles?: string[];
+  }>> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const administrators = await this.bot.getChatAdministrators(chatId);
+
+      return administrators.map((admin: any) => {
+        const user = admin.user;
+        const roles: string[] = [];
+
+        if (admin.status === "creator") {
+          roles.push("owner");
+        } else if (admin.status === "administrator") {
+          roles.push("administrator");
+
+          // Add specific admin rights as roles
+          if (admin.can_manage_chat) roles.push("can_manage_chat");
+          if (admin.can_delete_messages) roles.push("can_delete_messages");
+          if (admin.can_manage_video_chats) roles.push("can_manage_video_chats");
+          if (admin.can_restrict_members) roles.push("can_restrict_members");
+          if (admin.can_promote_members) roles.push("can_promote_members");
+          if (admin.can_change_info) roles.push("can_change_info");
+          if (admin.can_invite_users) roles.push("can_invite_users");
+          if (admin.can_post_stories) roles.push("can_post_stories");
+          if (admin.can_edit_stories) roles.push("can_edit_stories");
+          if (admin.can_delete_stories) roles.push("can_delete_stories");
+          if (admin.can_post_messages) roles.push("can_post_messages");
+          if (admin.can_edit_messages) roles.push("can_edit_messages");
+          if (admin.can_pin_messages) roles.push("can_pin_messages");
+          if (admin.can_manage_topics) roles.push("can_manage_topics");
+          if (admin.can_manage_direct_messages) roles.push("can_manage_direct_messages");
+        }
+
+        return {
+          id: user.id.toString(),
+          name: `${user.first_name || ""}${user.last_name ? ` ${user.last_name}` : ""}`.trim() || user.username,
+          username: user.username,
+          roles,
+        };
+      });
+    } catch (error) {
+      console.error(`Failed to get chat administrators for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Pin a message in the chat
+   * @param messageId - Message ID in format "chatId:messageId"
+   * @param options - Optional parameters
+   */
+  async pinChatMessage(messageId: string, options?: { disableNotification?: boolean }): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    const parts = messageId.split(":");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid messageId format: ${messageId}. Expected format: chatId:messageId`);
+    }
+
+    const [chatId, msgId] = parts;
+
+    try {
+      await this.bot.pinChatMessage(chatId, parseInt(msgId, 10), {
+        disable_notification: options?.disableNotification,
+      });
+    } catch (error) {
+      console.error(`Failed to pin message ${msgId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unpin a message in the chat
+   * @param messageId - Message ID in format "chatId:messageId"
+   */
+  async unpinChatMessage(messageId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    const parts = messageId.split(":");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid messageId format: ${messageId}. Expected format: chatId:messageId`);
+    }
+
+    const [chatId, msgId] = parts;
+
+    try {
+      await this.bot.unpinChatMessage(chatId, parseInt(msgId, 10));
+    } catch (error) {
+      console.error(`Failed to unpin message ${msgId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unpin all messages in the chat
+   * @param chatId - Chat ID or username
+   */
+  async unpinAllChatMessages(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.unpinAllChatMessages(chatId);
+    } catch (error) {
+      console.error(`Failed to unpin all messages in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set chat permissions
+   * @param chatId - Chat ID or username
+   * @param permissions - Permission object
+   */
+  async setChatPermissions(
+    chatId: string,
+    permissions: {
+      canSendMessages?: boolean;
+      canSendAudios?: boolean;
+      canSendDocuments?: boolean;
+      canSendPhotos?: boolean;
+      canSendVideos?: boolean;
+      canSendVideoNotes?: boolean;
+      canSendVoiceNotes?: boolean;
+      canSendPolls?: boolean;
+      canSendOtherMessages?: boolean;
+      canAddWebPagePreviews?: boolean;
+      canChangeInfo?: boolean;
+      canInviteUsers?: boolean;
+      canPinMessages?: boolean;
+      canManageTopics?: boolean;
+    }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const telegramPermissions: any = {};
+
+      if (permissions.canSendMessages !== undefined) telegramPermissions.can_send_messages = permissions.canSendMessages;
+      if (permissions.canSendAudios !== undefined) telegramPermissions.can_send_audios = permissions.canSendAudios;
+      if (permissions.canSendDocuments !== undefined) telegramPermissions.can_send_documents = permissions.canSendDocuments;
+      if (permissions.canSendPhotos !== undefined) telegramPermissions.can_send_photos = permissions.canSendPhotos;
+      if (permissions.canSendVideos !== undefined) telegramPermissions.can_send_videos = permissions.canSendVideos;
+      if (permissions.canSendVideoNotes !== undefined) telegramPermissions.can_send_video_notes = permissions.canSendVideoNotes;
+      if (permissions.canSendVoiceNotes !== undefined) telegramPermissions.can_send_voice_notes = permissions.canSendVoiceNotes;
+      if (permissions.canSendPolls !== undefined) telegramPermissions.can_send_polls = permissions.canSendPolls;
+      if (permissions.canSendOtherMessages !== undefined) telegramPermissions.can_send_other_messages = permissions.canSendOtherMessages;
+      if (permissions.canAddWebPagePreviews !== undefined) telegramPermissions.can_add_web_page_previews = permissions.canAddWebPagePreviews;
+      if (permissions.canChangeInfo !== undefined) telegramPermissions.can_change_info = permissions.canChangeInfo;
+      if (permissions.canInviteUsers !== undefined) telegramPermissions.can_invite_users = permissions.canInviteUsers;
+      if (permissions.canPinMessages !== undefined) telegramPermissions.can_pin_messages = permissions.canPinMessages;
+      if (permissions.canManageTopics !== undefined) telegramPermissions.can_manage_topics = permissions.canManageTopics;
+
+      await this.bot.setChatPermissions(chatId, telegramPermissions);
+    } catch (error) {
+      console.error(`Failed to set chat permissions for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ban a chat member
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to ban
+   * @param options - Optional parameters
+   */
+  async banChatMember(
+    chatId: string,
+    userId: string,
+    options?: {
+      untilDate?: number; // Unix timestamp, 0 for permanent
+      revokeMessages?: boolean; // Delete all messages from the user
+    }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.banChatMember(chatId, parseInt(userId, 10), {
+        until_date: options?.untilDate,
+        revoke_messages: options?.revokeMessages,
+      });
+    } catch (error) {
+      console.error(`Failed to ban user ${userId} from ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unban a chat member
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to unban
+   * @param onlyIfBanned - Only do nothing if the user is not banned
+   */
+  async unbanChatMember(chatId: string, userId: string, onlyIfBanned?: boolean): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.unbanChatMember(chatId, parseInt(userId, 10), {
+        only_if_banned: onlyIfBanned,
+      });
+    } catch (error) {
+      console.error(`Failed to unban user ${userId} from ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Restrict a chat member
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to restrict
+   * @param permissions - Permission object
+   * @param options - Optional parameters
+   */
+  async restrictChatMember(
+    chatId: string,
+    userId: string,
+    permissions: {
+      canSendMessages?: boolean;
+      canSendAudios?: boolean;
+      canSendDocuments?: boolean;
+      canSendPhotos?: boolean;
+      canSendVideos?: boolean;
+      canSendVideoNotes?: boolean;
+      canSendVoiceNotes?: boolean;
+      canSendPolls?: boolean;
+      canSendOtherMessages?: boolean;
+      canAddWebPagePreviews?: boolean;
+      canChangeInfo?: boolean;
+      canInviteUsers?: boolean;
+      canPinMessages?: boolean;
+      canManageTopics?: boolean;
+    },
+    options?: {
+      untilDate?: number; // Unix timestamp, 0 for permanent
+      useIndependentChatPermissions?: boolean;
+    }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const telegramPermissions: any = {};
+
+      if (permissions.canSendMessages !== undefined) telegramPermissions.can_send_messages = permissions.canSendMessages;
+      if (permissions.canSendAudios !== undefined) telegramPermissions.can_send_audios = permissions.canSendAudios;
+      if (permissions.canSendDocuments !== undefined) telegramPermissions.can_send_documents = permissions.canSendDocuments;
+      if (permissions.canSendPhotos !== undefined) telegramPermissions.can_send_photos = permissions.canSendPhotos;
+      if (permissions.canSendVideos !== undefined) telegramPermissions.can_send_videos = permissions.canSendVideos;
+      if (permissions.canSendVideoNotes !== undefined) telegramPermissions.can_send_video_notes = permissions.canSendVideoNotes;
+      if (permissions.canSendVoiceNotes !== undefined) telegramPermissions.can_send_voice_notes = permissions.canSendVoiceNotes;
+      if (permissions.canSendPolls !== undefined) telegramPermissions.can_send_polls = permissions.canSendPolls;
+      if (permissions.canSendOtherMessages !== undefined) telegramPermissions.can_send_other_messages = permissions.canSendOtherMessages;
+      if (permissions.canAddWebPagePreviews !== undefined) telegramPermissions.can_add_web_page_previews = permissions.canAddWebPagePreviews;
+      if (permissions.canChangeInfo !== undefined) telegramPermissions.can_change_info = permissions.canChangeInfo;
+      if (permissions.canInviteUsers !== undefined) telegramPermissions.can_invite_users = permissions.canInviteUsers;
+      if (permissions.canPinMessages !== undefined) telegramPermissions.can_pin_messages = permissions.canPinMessages;
+      if (permissions.canManageTopics !== undefined) telegramPermissions.can_manage_topics = permissions.canManageTopics;
+
+      await this.bot.restrictChatMember(chatId, parseInt(userId, 10), telegramPermissions, {
+        until_date: options?.untilDate,
+        use_independent_chat_permissions: options?.useIndependentChatPermissions,
+      });
+    } catch (error) {
+      console.error(`Failed to restrict user ${userId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Promote a chat member to administrator
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to promote
+   * @param rights - Administrator rights
+   */
+  async promoteChatMember(
+    chatId: string,
+    userId: string,
+    rights?: {
+      isAnonymous?: boolean;
+      canManageChat?: boolean;
+      canDeleteMessages?: boolean;
+      canManageVideoChats?: boolean;
+      canRestrictMembers?: boolean;
+      canPromoteMembers?: boolean;
+      canChangeInfo?: boolean;
+      canInviteUsers?: boolean;
+      canPostStories?: boolean;
+      canEditStories?: boolean;
+      canDeleteStories?: boolean;
+      canPostMessages?: boolean;
+      canEditMessages?: boolean;
+      canPinMessages?: boolean;
+      canManageTopics?: boolean;
+      canManageDirectMessages?: boolean;
+      customTitle?: string;
+    }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const telegramRights: any = {};
+
+      if (rights?.isAnonymous !== undefined) telegramRights.is_anonymous = rights.isAnonymous;
+      if (rights?.canManageChat !== undefined) telegramRights.can_manage_chat = rights.canManageChat;
+      if (rights?.canDeleteMessages !== undefined) telegramRights.can_delete_messages = rights.canDeleteMessages;
+      if (rights?.canManageVideoChats !== undefined) telegramRights.can_manage_video_chats = rights.canManageVideoChats;
+      if (rights?.canRestrictMembers !== undefined) telegramRights.can_restrict_members = rights.canRestrictMembers;
+      if (rights?.canPromoteMembers !== undefined) telegramRights.can_promote_members = rights.canPromoteMembers;
+      if (rights?.canChangeInfo !== undefined) telegramRights.can_change_info = rights.canChangeInfo;
+      if (rights?.canInviteUsers !== undefined) telegramRights.can_invite_users = rights.canInviteUsers;
+      if (rights?.canPostStories !== undefined) telegramRights.can_post_stories = rights.canPostStories;
+      if (rights?.canEditStories !== undefined) telegramRights.can_edit_stories = rights.canEditStories;
+      if (rights?.canDeleteStories !== undefined) telegramRights.can_delete_stories = rights.canDeleteStories;
+      if (rights?.canPostMessages !== undefined) telegramRights.can_post_messages = rights.canPostMessages;
+      if (rights?.canEditMessages !== undefined) telegramRights.can_edit_messages = rights.canEditMessages;
+      if (rights?.canPinMessages !== undefined) telegramRights.can_pin_messages = rights.canPinMessages;
+      if (rights?.canManageTopics !== undefined) telegramRights.can_manage_topics = rights.canManageTopics;
+      if (rights?.canManageDirectMessages !== undefined) telegramRights.can_manage_direct_messages = rights.canManageDirectMessages;
+      if (rights?.customTitle !== undefined) telegramRights.custom_title = rights.customTitle;
+
+      await this.bot.promoteChatMember(chatId, parseInt(userId, 10), telegramRights);
+    } catch (error) {
+      console.error(`Failed to promote user ${userId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set chat title
+   * @param chatId - Chat ID or username
+   * @param title - New chat title (1-128 characters)
+   */
+  async setChatTitle(chatId: string, title: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    if (!title || title.length < 1 || title.length > 128) {
+      throw new Error("Title must be between 1 and 128 characters");
+    }
+
+    try {
+      await this.bot.setChatTitle(chatId, title);
+    } catch (error) {
+      console.error(`Failed to set chat title for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set chat description
+   * @param chatId - Chat ID or username
+   * @param description - New chat description (0-255 characters)
+   */
+  async setChatDescription(chatId: string, description?: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    if (description && description.length > 255) {
+      throw new Error("Description must not exceed 255 characters");
+    }
+
+    try {
+      await this.bot.setChatDescription(chatId, description || "");
+    } catch (error) {
+      console.error(`Failed to set chat description for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set chat photo
+   * @param chatId - Chat ID or username
+   * @param photo - Photo file path, Buffer, or file URL
+   */
+  async setChatPhoto(chatId: string, photo: string | Buffer): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.setChatPhoto(chatId, photo);
+    } catch (error) {
+      console.error(`Failed to set chat photo for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete chat photo
+   * @param chatId - Chat ID or username
+   */
+  async deleteChatPhoto(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.deleteChatPhoto(chatId);
+    } catch (error) {
+      console.error(`Failed to delete chat photo for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Export chat invite link
+   * @param chatId - Chat ID or username
+   * @returns Promise resolving to invite link
+   */
+  async exportChatInviteLink(chatId: string): Promise<string> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const link = await this.bot.exportChatInviteLink(chatId);
+      return link;
+    } catch (error) {
+      console.error(`Failed to export invite link for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create chat invite link
+   * @param chatId - Chat ID or username
+   * @param options - Optional parameters
+   * @returns Promise resolving to invite link info
+   */
+  async createChatInviteLink(
+    chatId: string,
+    options?: {
+      name?: string;
+      expireDate?: number;
+      memberLimit?: number;
+      createsJoinRequest?: boolean;
+    }
+  ): Promise<{
+    inviteLink: string;
+    creator: any;
+    createsJoinRequest: boolean;
+    isPrimary: boolean;
+    name?: string;
+    expireDate?: number;
+    memberLimit?: number;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const linkOptions: any = {};
+      if (options?.name !== undefined) linkOptions.name = options.name;
+      if (options?.expireDate !== undefined) linkOptions.expire_date = options.expireDate;
+      if (options?.memberLimit !== undefined) linkOptions.member_limit = options.memberLimit;
+      if (options?.createsJoinRequest !== undefined) linkOptions.creates_join_request = options.createsJoinRequest;
+
+      const linkInfo = await this.bot.createChatInviteLink(chatId, linkOptions);
+      return linkInfo;
+    } catch (error) {
+      console.error(`Failed to create invite link for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edit chat invite link
+   * @param chatId - Chat ID or username
+   * @param inviteLink - Invite link to edit
+   * @param options - Optional parameters
+   * @returns Promise resolving to edited invite link info
+   */
+  async editChatInviteLink(
+    chatId: string,
+    inviteLink: string,
+    options?: {
+      name?: string;
+      expireDate?: number;
+      memberLimit?: number;
+      createsJoinRequest?: boolean;
+    }
+  ): Promise<{
+    inviteLink: string;
+    creator: any;
+    createsJoinRequest: boolean;
+    isPrimary: boolean;
+    name?: string;
+    expireDate?: number;
+    memberLimit?: number;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const linkOptions: any = {};
+      if (options?.name !== undefined) linkOptions.name = options.name;
+      if (options?.expireDate !== undefined) linkOptions.expire_date = options.expireDate;
+      if (options?.memberLimit !== undefined) linkOptions.member_limit = options.memberLimit;
+      if (options?.createsJoinRequest !== undefined) linkOptions.creates_join_request = options.createsJoinRequest;
+
+      const linkInfo = await this.bot.editChatInviteLink(chatId, inviteLink, linkOptions);
+      return linkInfo;
+    } catch (error) {
+      console.error(`Failed to edit invite link for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Revoke chat invite link
+   * @param chatId - Chat ID or username
+   * @param inviteLink - Invite link to revoke
+   * @returns Promise resolving to revoked invite link info
+   */
+  async revokeChatInviteLink(chatId: string, inviteLink: string): Promise<{
+    inviteLink: string;
+    creator: any;
+    createsJoinRequest: boolean;
+    isPrimary: boolean;
+    isRevoked: true;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const linkInfo = await this.bot.revokeChatInviteLink(chatId, inviteLink);
+      return linkInfo;
+    } catch (error) {
+      console.error(`Failed to revoke invite link for ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Approve chat join request
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to approve
+   */
+  async approveChatJoinRequest(chatId: string, userId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.approveChatJoinRequest(chatId, parseInt(userId, 10));
+    } catch (error) {
+      console.error(`Failed to approve join request for user ${userId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Decline chat join request
+   * @param chatId - Chat ID or username
+   * @param userId - User ID to decline
+   */
+  async declineChatJoinRequest(chatId: string, userId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.declineChatJoinRequest(chatId, parseInt(userId, 10));
+    } catch (error) {
+      console.error(`Failed to decline join request for user ${userId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user profile photos
+   * @param userId - User ID
+   * @param options - Optional parameters
+   * @returns Promise resolving to user profile photos
+   */
+  async getUserProfilePhotos(
+    userId: string,
+    options?: {
+      offset?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    totalCount: number;
+    photos: Array<Array<{ fileId: string; fileUniqueId: string; width: number; height: number; fileSize?: number }>>;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const photosInfo = await this.bot.getUserProfilePhotos(parseInt(userId, 10), {
+        offset: options?.offset || 0,
+        limit: options?.limit || 100,
+      });
+
+      return {
+        totalCount: photosInfo.total_count,
+        photos: photosInfo.photos.map((photoArray: any[]) =>
+          photoArray.map((photo: any) => ({
+            fileId: photo.file_id,
+            fileUniqueId: photo.file_unique_id,
+            width: photo.width,
+            height: photo.height,
+            fileSize: photo.file_size,
+          }))
+        ),
+      };
+    } catch (error) {
+      console.error(`Failed to get user profile photos for ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get forum topic icon stickers
+   * @returns Promise resolving to array of sticker objects
+   */
+  async getForumTopicIconStickers(): Promise<Array<{ fileId: string; fileUniqueId: string; width: number; height: number; isAnimated: boolean; isVideo: boolean }>> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const stickers = await this.bot.getForumTopicIconStickers();
+
+      return stickers.map((sticker: any) => ({
+        fileId: sticker.file_id,
+        fileUniqueId: sticker.file_unique_id,
+        width: sticker.width,
+        height: sticker.height,
+        isAnimated: sticker.is_animated,
+        isVideo: sticker.is_video,
+      }));
+    } catch (error) {
+      console.error("Failed to get forum topic icon stickers:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a forum topic
+   * @param chatId - Chat ID or username (must be a supergroup)
+   * @param name - Topic name (1-128 characters)
+   * @param options - Optional parameters
+   * @returns Promise resolving to created topic info
+   */
+  async createForumTopic(
+    chatId: string,
+    name: string,
+    options?: {
+      iconColor?: number; // RGB color
+      iconCustomEmojiId?: string; // Custom emoji ID
+    }
+  ): Promise<{
+    messageThreadId: number;
+    name: string;
+    iconColor: number;
+    iconCustomEmojiId?: string;
+  }> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const topicOptions: any = {};
+      if (options?.iconColor !== undefined) topicOptions.icon_color = options.iconColor;
+      if (options?.iconCustomEmojiId !== undefined) topicOptions.icon_custom_emoji_id = options.iconCustomEmojiId;
+
+      const topic = await this.bot.createForumTopic(chatId, name, topicOptions);
+
+      return {
+        messageThreadId: topic.message_thread_id,
+        name: topic.name,
+        iconColor: topic.icon_color,
+        iconCustomEmojiId: topic.icon_custom_emoji_id,
+      };
+    } catch (error) {
+      console.error(`Failed to create forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edit a forum topic
+   * @param chatId - Chat ID or username
+   * @param messageThreadId - Forum topic identifier
+   * @param options - Optional parameters
+   */
+  async editForumTopic(
+    chatId: string,
+    messageThreadId: number,
+    options?: {
+      name?: string;
+      iconCustomEmojiId?: string;
+    }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      const topicOptions: any = {};
+      if (options?.name !== undefined) topicOptions.name = options.name;
+      if (options?.iconCustomEmojiId !== undefined) topicOptions.icon_custom_emoji_id = options.iconCustomEmojiId;
+
+      await this.bot.editForumTopic(chatId, messageThreadId, topicOptions);
+    } catch (error) {
+      console.error(`Failed to edit forum topic ${messageThreadId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Close a forum topic
+   * @param chatId - Chat ID or username
+   * @param messageThreadId - Forum topic identifier
+   */
+  async closeForumTopic(chatId: string, messageThreadId: number): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.closeForumTopic(chatId, messageThreadId);
+    } catch (error) {
+      console.error(`Failed to close forum topic ${messageThreadId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reopen a forum topic
+   * @param chatId - Chat ID or username
+   * @param messageThreadId - Forum topic identifier
+   */
+  async reopenForumTopic(chatId: string, messageThreadId: number): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.reopenForumTopic(chatId, messageThreadId);
+    } catch (error) {
+      console.error(`Failed to reopen forum topic ${messageThreadId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a forum topic
+   * @param chatId - Chat ID or username
+   * @param messageThreadId - Forum topic identifier
+   */
+  async deleteForumTopic(chatId: string, messageThreadId: number): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.deleteForumTopic(chatId, messageThreadId);
+    } catch (error) {
+      console.error(`Failed to delete forum topic ${messageThreadId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unpin all messages in a forum topic
+   * @param chatId - Chat ID or username
+   * @param messageThreadId - Forum topic identifier
+   */
+  async unpinAllForumTopicMessages(chatId: string, messageThreadId: number): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.unpinAllForumTopicMessages(chatId, messageThreadId);
+    } catch (error) {
+      console.error(`Failed to unpin all messages in forum topic ${messageThreadId} in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edit the 'General' forum topic
+   * @param chatId - Chat ID or username
+   * @param name - New topic name (1-128 characters)
+   */
+  async editGeneralForumTopic(chatId: string, name: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.editGeneralForumTopic(chatId, name);
+    } catch (error) {
+      console.error(`Failed to edit General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Close the 'General' forum topic
+   * @param chatId - Chat ID or username
+   */
+  async closeGeneralForumTopic(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.closeGeneralForumTopic(chatId);
+    } catch (error) {
+      console.error(`Failed to close General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reopen the 'General' forum topic
+   * @param chatId - Chat ID or username
+   */
+  async reopenGeneralForumTopic(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.reopenGeneralForumTopic(chatId);
+    } catch (error) {
+      console.error(`Failed to reopen General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Hide the 'General' forum topic
+   * @param chatId - Chat ID or username
+   */
+  async hideGeneralForumTopic(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.hideGeneralForumTopic(chatId);
+    } catch (error) {
+      console.error(`Failed to hide General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unhide the 'General' forum topic
+   * @param chatId - Chat ID or username
+   */
+  async unhideGeneralForumTopic(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.unhideGeneralForumTopic(chatId);
+    } catch (error) {
+      console.error(`Failed to unhide General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unpin all messages in the 'General' forum topic
+   * @param chatId - Chat ID or username
+   */
+  async unpinAllGeneralForumTopicMessages(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.unpinAllGeneralForumTopicMessages(chatId);
+    } catch (error) {
+      console.error(`Failed to unpin all messages in General forum topic in ${chatId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Leave a chat (group, supergroup, or channel)
+   * @param chatId - Chat ID or username
+   */
+  async leaveChat(chatId: string): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.leaveChat(chatId);
+    } catch (error) {
+      console.error(`Failed to leave chat ${chatId}:`, error);
+      throw error;
+    }
+  }
+
   async destroy(): Promise<void> {
     if (this.bot) {
       await this.bot.stopPolling();
@@ -590,7 +1705,9 @@ export class TelegramAdapter implements FullAdapter {
    */
   private handleTelegramMessage(msg: any): void {
     try {
-      const chatId = msg.chat.id.toString();
+      const telegramChatId = msg.chat.id.toString();
+      const chatId = telegramIdToPublicId(telegramChatId); // 转换为正数
+
       const isGroup = msg.chat.type === "supergroup" || msg.chat.type === "group";
       const isChannel = msg.chat.type === "channel";
 
@@ -603,7 +1720,7 @@ export class TelegramAdapter implements FullAdapter {
       };
 
       const to: Participant = {
-        id: chatId,
+        id: chatId, // 使用转换后的正数 ID
         type: isGroup ? "group" : isChannel ? "channel" : "user",
         name: msg.chat.title || msg.chat.username || chatId,
       };

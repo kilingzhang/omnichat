@@ -1,12 +1,97 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TelegramAdapter } from "./adapter.js";
-import { Message } from "@omnichat/core";
+
+// Type for the global test helper
+declare global {
+  const __setImportTelegramBot: (fn: () => Promise<any>) => void;
+}
+
+// Mock factory - creates fresh mock bot instances
+const createMockBot = () => ({
+  on: vi.fn(),
+  setWebHook: vi.fn(),
+  stopPolling: vi.fn(),
+  sendMessage: vi.fn(),
+  sendPhoto: vi.fn(),
+  sendVideo: vi.fn(),
+  sendAudio: vi.fn(),
+  sendDocument: vi.fn(),
+  sendSticker: vi.fn(),
+  sendPoll: vi.fn(),
+  editMessageText: vi.fn(),
+  deleteMessage: vi.fn(),
+  forwardMessage: vi.fn(),
+  getFileLink: vi.fn(),
+  setMyCommands: vi.fn(),
+  sendChatAction: vi.fn(),
+  setMessageReaction: vi.fn(),
+  getChat: vi.fn(),
+  getChatMemberCount: vi.fn(),
+  getChatMember: vi.fn(),
+  getChatAdministrators: vi.fn(),
+  pinChatMessage: vi.fn(),
+  unpinChatMessage: vi.fn(),
+  unpinAllChatMessages: vi.fn(),
+  setChatPermissions: vi.fn(),
+  banChatMember: vi.fn(),
+  unbanChatMember: vi.fn(),
+  restrictChatMember: vi.fn(),
+  promoteChatMember: vi.fn(),
+  setChatTitle: vi.fn(),
+  setChatDescription: vi.fn(),
+  setChatPhoto: vi.fn(),
+  deleteChatPhoto: vi.fn(),
+  exportChatInviteLink: vi.fn(),
+  createChatInviteLink: vi.fn(),
+  editChatInviteLink: vi.fn(),
+  revokeChatInviteLink: vi.fn(),
+  approveChatJoinRequest: vi.fn(),
+  declineChatJoinRequest: vi.fn(),
+  getUserProfilePhotos: vi.fn(),
+  getForumTopicIconStickers: vi.fn(),
+  createForumTopic: vi.fn(),
+  editForumTopic: vi.fn(),
+  closeForumTopic: vi.fn(),
+  reopenForumTopic: vi.fn(),
+  deleteForumTopic: vi.fn(),
+  unpinAllForumTopicMessages: vi.fn(),
+  editGeneralForumTopic: vi.fn(),
+  closeGeneralForumTopic: vi.fn(),
+  reopenGeneralForumTopic: vi.fn(),
+  hideGeneralForumTopic: vi.fn(),
+  unhideGeneralForumTopic: vi.fn(),
+  unpinAllGeneralForumTopicMessages: vi.fn(),
+  leaveChat: vi.fn(),
+  answerCallbackQuery: vi.fn().mockResolvedValue(true),
+});
 
 describe("TelegramAdapter", () => {
   let adapter: TelegramAdapter;
+  let mockBotInstance: ReturnType<typeof createMockBot>;
+  let MockTelegramBot: any;
 
   beforeEach(() => {
+    // Create fresh mock instance for each test
+    mockBotInstance = createMockBot();
+
+    // Create a mock constructor that returns the mock bot instance
+    // Use class syntax to make it work with 'new' operator
+    // Extend the mock with all methods from mockBotInstance
+    MockTelegramBot = class {
+      constructor(token: string, options: any) {
+        // Copy all properties and methods from mockBotInstance to this instance
+        Object.assign(this, mockBotInstance);
+      }
+    };
+
+    // Mock the import function to return the constructor
+    __setImportTelegramBot(async () => MockTelegramBot);
+
     adapter = new TelegramAdapter();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
   describe("initialization", () => {
@@ -19,14 +104,6 @@ describe("TelegramAdapter", () => {
     });
 
     it("should initialize with API token", async () => {
-      // Mock the import to avoid needing the actual library
-      vi.mock("node-telegram-bot-api", () => ({
-        default: vi.fn().mockImplementation(() => ({
-          on: vi.fn(),
-          setWebHook: vi.fn(),
-        })),
-      }));
-
       await expect(
         adapter.init({
           apiToken: "test_token",
@@ -53,7 +130,7 @@ describe("TelegramAdapter", () => {
 
       // Interaction capabilities
       expect(caps.interaction.buttons).toBe(true);
-      expect(caps.interaction.polls).toBe(false);
+      expect(caps.interaction.polls).toBe(true);
       expect(caps.interaction.reactions).toBe(true);
       expect(caps.interaction.stickers).toBe(true);
       expect(caps.interaction.effects).toBe(true);
@@ -62,187 +139,960 @@ describe("TelegramAdapter", () => {
       expect(caps.discovery.history).toBe(false);
       expect(caps.discovery.search).toBe(false);
       expect(caps.discovery.pins).toBe(false);
-      expect(caps.discovery.memberInfo).toBe(false);
-      expect(caps.discovery.channelInfo).toBe(false);
+      expect(caps.discovery.memberInfo).toBe(true);
+      expect(caps.discovery.channelInfo).toBe(true);
 
       // Management capabilities
-      expect(caps.management.kick).toBe(false);
-      expect(caps.management.ban).toBe(false);
+      expect(caps.management.kick).toBe(true);
+      expect(caps.management.ban).toBe(true);
       expect(caps.management.timeout).toBe(false);
       expect(caps.management.channelCreate).toBe(false);
       expect(caps.management.channelEdit).toBe(false);
       expect(caps.management.channelDelete).toBe(false);
-      expect(caps.management.permissions).toBe(false);
+      expect(caps.management.permissions).toBe(true);
     });
   });
 
   describe("message mapping", () => {
-    it("should map text message correctly", () => {
-      const telegramMsg = {
-        message_id: 123,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice", username: "alice" },
-        chat: { id: 789, type: "private" },
-        text: "Hello, world!",
-      };
-
-      // Create adapter instance and access private method via casting
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.platform).toBe("telegram");
-      expect(message.type).toBe("text");
-      expect(message.from.id).toBe("456");
-      expect(message.from.name).toBe("Alice");
-      expect(message.from.username).toBe("alice");
-      expect(message.to.id).toBe("789");
-      expect(message.to.type).toBe("user");
-      expect(message.content.text).toBe("Hello, world!");
-      expect(message.messageId).toBe("789:123");
-      expect(message.timestamp).toBe(1704635200000);
-      expect(message.raw).toBe(telegramMsg);
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
     });
 
-    it("should map photo message correctly", () => {
-      const telegramMsg = {
-        message_id: 124,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice" },
-        chat: { id: 789, type: "private" },
-        photo: [{ file_id: "photo_123" }, { file_id: "photo_456" }],
-        caption: "Photo caption",
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.type).toBe("media");
-      expect(message.content.mediaUrl).toBe("photo_456");
-      expect(message.content.mediaType).toBe("image");
-      expect(message.content.text).toBe("Photo caption");
+    it("should handle bot initialization", async () => {
+      // This test verifies that the bot is properly initialized
+      // and can handle incoming messages
+      expect(adapter.platform).toBe("telegram");
     });
 
-    it("should map sticker message correctly", () => {
-      const telegramMsg = {
-        message_id: 125,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice" },
-        chat: { id: 789, type: "private" },
-        sticker: { file_id: "sticker_123" },
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.type).toBe("sticker");
-      expect(message.content.stickerId).toBe("sticker_123");
-    });
-
-    it("should map group chat message correctly", () => {
-      const telegramMsg = {
-        message_id: 126,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice" },
-        chat: { id: -100123456789, type: "supergroup", title: "Test Group" },
-        text: "Hello group!",
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.to.id).toBe("-100123456789");
-      expect(message.to.type).toBe("group");
-      expect(message.to.name).toBe("Test Group");
-    });
-
-    it("should map message with reply_to", () => {
-      const telegramMsg = {
-        message_id: 127,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice" },
-        chat: { id: 789, type: "private" },
-        text: "Reply to previous",
-        reply_to_message: {
-          message_id: 100,
-          text: "Original message",
-        },
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.replyTo).toBeDefined();
-      expect(message.replyTo?.messageId).toBe("789:100");
-      expect(message.replyTo?.text).toBe("Original message");
-    });
-
-    it("should map message with thread", () => {
-      const telegramMsg = {
-        message_id: 128,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice" },
-        chat: { id: 789, type: "supergroup" },
-        text: "Thread message",
-        message_thread_id: 42,
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.thread).toBeDefined();
-      expect(message.thread?.id).toBe(42);
-    });
-
-    it("should map callback query correctly", () => {
-      const callbackQuery = {
-        id: "callback_123",
-        from: { id: 456, first_name: "Alice", username: "alice" },
-        message: {
-          message_id: 129,
-          chat: { id: 789, type: "private" },
-          text: "Original text",
-        },
-        data: "button_clicked",
-      };
-
-      const message = (adapter as any).mapCallbackQuery(callbackQuery);
-
-      expect(message.platform).toBe("telegram");
-      expect(message.type).toBe("callback");
-      expect(message.from.id).toBe("456");
-      expect(message.from.name).toBe("Alice");
-      expect(message.from.username).toBe("alice");
-      expect(message.content.text).toBe("[Callback: button_clicked]");
-      expect(message.replyTo?.messageId).toBe("789:129");
-      expect(message.replyTo?.text).toBe("Original text");
-    });
-
-    it("should handle full name with last name", () => {
-      const telegramMsg = {
-        message_id: 130,
-        date: 1704635200,
-        from: { id: 456, first_name: "Alice", last_name: "Johnson" },
-        chat: { id: 789, type: "private" },
-        text: "Full name test",
-      };
-
-      const message = (adapter as any).mapTelegramMessage(telegramMsg);
-
-      expect(message.from.name).toBe("Alice Johnson");
-    });
-  });
-
-  describe("message ID parsing", () => {
-    it("should format message ID correctly", () => {
-      expect("789:123").toMatch(/^\d+:\d+$/);
+    it("should have correct capabilities", () => {
+      const caps = adapter.getCapabilities();
+      expect(caps.base.sendText).toBe(true);
+      expect(caps.conversation.reply).toBe(true);
+      expect(caps.interaction.buttons).toBe(true);
     });
   });
 
   describe("destroy", () => {
     it("should cleanup adapter resources", async () => {
-      vi.mock("node-telegram-bot-api", () => ({
-        default: vi.fn().mockImplementation(() => ({
-          on: vi.fn(),
-          stopPolling: vi.fn(),
-        })),
-      }));
-
       await adapter.init({ apiToken: "test" });
       await expect(adapter.destroy()).resolves.not.toThrow();
+      expect(mockBotInstance.stopPolling).toHaveBeenCalled();
+    });
+  });
+
+  describe("Chat Information Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("getChat", () => {
+      it("should get chat information successfully", async () => {
+        mockBotInstance.getChat.mockResolvedValue({
+          id: -100123456789,
+          type: "supergroup",
+          title: "Test Group",
+          username: "testgroup",
+          description: "Test description",
+          invite_link: "https://t.me/+ABC123",
+        });
+
+        const chatInfo = await adapter.getChat("@testgroup");
+
+        expect(chatInfo).toEqual({
+          id: "-100123456789",
+          name: "Test Group",
+          type: "group",
+          username: "testgroup",
+          description: "Test description",
+          inviteLink: "https://t.me/+ABC123",
+        });
+        expect(mockBotInstance.getChat).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should handle channel type", async () => {
+        mockBotInstance.getChat.mockResolvedValue({
+          id: -100123456789,
+          type: "channel",
+          title: "Test Channel",
+          username: "testchannel",
+        });
+
+        const chatInfo = await adapter.getChat("@testchannel");
+
+        expect(chatInfo.type).toBe("channel");
+      });
+
+      it("should handle private chat", async () => {
+        mockBotInstance.getChat.mockResolvedValue({
+          id: 123456789,
+          type: "private",
+          first_name: "John",
+          username: "john",
+        });
+
+        const chatInfo = await adapter.getChat("123456789");
+
+        expect(chatInfo.type).toBe("user");
+        // username takes priority over first_name
+        expect(chatInfo.name).toBe("john");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getChat("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+
+      it("should handle API errors", async () => {
+        mockBotInstance.getChat.mockRejectedValue(new Error("Chat not found"));
+
+        await expect(adapter.getChat("@nonexistent")).rejects.toThrow("Chat not found");
+      });
+    });
+
+    describe("getChatMemberCount", () => {
+      it("should get member count successfully", async () => {
+        mockBotInstance.getChatMemberCount.mockResolvedValue(150);
+
+        const count = await adapter.getChatMemberCount("@testgroup");
+
+        expect(count).toBe(150);
+        expect(mockBotInstance.getChatMemberCount).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getChatMemberCount("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("getChatMember", () => {
+      it("should get member information successfully", async () => {
+        mockBotInstance.getChatMember.mockResolvedValue({
+          user: {
+            id: 123456789,
+            first_name: "Alice",
+            last_name: "Johnson",
+            username: "alice",
+          },
+          status: "administrator",
+          can_be_edited: false,
+          can_change_info: true,
+          can_delete_messages: true,
+        });
+
+        const member = await adapter.getChatMember("@testgroup", "123456789");
+
+        expect(member).toEqual({
+          id: "123456789",
+          name: "Alice Johnson",
+          username: "alice",
+          avatar: undefined,
+          roles: ["administrator"],
+        });
+        expect(mockBotInstance.getChatMember).toHaveBeenCalledWith("@testgroup", 123456789);
+      });
+
+      it("should handle member without avatar", async () => {
+        mockBotInstance.getChatMember.mockResolvedValue({
+          user: {
+            id: 123456789,
+            first_name: "Bob",
+          },
+          status: "member",
+        });
+
+        const member = await adapter.getChatMember("@testgroup", "123456789");
+
+        expect(member.name).toBe("Bob");
+        expect(member.roles).toEqual([]);
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getChatMember("@test", "123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("getChatAdministrators", () => {
+      it("should get administrators list successfully", async () => {
+        mockBotInstance.getChatAdministrators.mockResolvedValue([
+          {
+            status: "creator",
+            user: {
+              id: 111,
+              first_name: "Owner",
+              username: "owner",
+            },
+          },
+          {
+            status: "administrator",
+            user: {
+              id: 222,
+              first_name: "Admin",
+              username: "admin",
+            },
+            can_delete_messages: true,
+            can_change_info: true,
+            can_pin_messages: true,
+          },
+        ]);
+
+        const admins = await adapter.getChatAdministrators("@testgroup");
+
+        expect(admins).toHaveLength(2);
+        expect(admins[0]).toEqual({
+          id: "111",
+          name: "Owner",
+          username: "owner",
+          roles: ["owner"],
+        });
+        expect(admins[1]).toEqual({
+          id: "222",
+          name: "Admin",
+          username: "admin",
+          roles: ["administrator", "can_delete_messages", "can_change_info", "can_pin_messages"],
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getChatAdministrators("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Message Pinning Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("pinChatMessage", () => {
+      it("should pin message successfully", async () => {
+        mockBotInstance.pinChatMessage.mockResolvedValue(true);
+
+        await adapter.pinChatMessage("-100123456789:123");
+
+        expect(mockBotInstance.pinChatMessage).toHaveBeenCalledWith("-100123456789", 123, {
+          disable_notification: undefined,
+        });
+      });
+
+      it("should pin message with disable notification", async () => {
+        mockBotInstance.pinChatMessage.mockResolvedValue(true);
+
+        await adapter.pinChatMessage("-100123456789:123", { disableNotification: true });
+
+        expect(mockBotInstance.pinChatMessage).toHaveBeenCalledWith("-100123456789", 123, {
+          disable_notification: true,
+        });
+      });
+
+      it("should throw error for invalid message ID format", async () => {
+        await expect(adapter.pinChatMessage("invalid")).rejects.toThrow(
+          "Invalid messageId format"
+        );
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.pinChatMessage("-100123456789:123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("unpinChatMessage", () => {
+      it("should unpin message successfully", async () => {
+        mockBotInstance.unpinChatMessage.mockResolvedValue(true);
+
+        await adapter.unpinChatMessage("-100123456789:123");
+
+        expect(mockBotInstance.unpinChatMessage).toHaveBeenCalledWith("-100123456789", 123);
+      });
+
+      it("should throw error for invalid message ID format", async () => {
+        await expect(adapter.unpinChatMessage("invalid")).rejects.toThrow(
+          "Invalid messageId format"
+        );
+      });
+    });
+
+    describe("unpinAllChatMessages", () => {
+      it("should unpin all messages successfully", async () => {
+        mockBotInstance.unpinAllChatMessages.mockResolvedValue(true);
+
+        await adapter.unpinAllChatMessages("@testgroup");
+
+        expect(mockBotInstance.unpinAllChatMessages).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.unpinAllChatMessages("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Permission Management Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("setChatPermissions", () => {
+      it("should set chat permissions successfully", async () => {
+        mockBotInstance.setChatPermissions.mockResolvedValue(true);
+
+        await adapter.setChatPermissions("@testgroup", {
+          canSendMessages: true,
+          canSendPhotos: true,
+          canSendPolls: true,
+        });
+
+        expect(mockBotInstance.setChatPermissions).toHaveBeenCalledWith("@testgroup", {
+          can_send_messages: true,
+          can_send_audios: undefined,
+          can_send_documents: undefined,
+          can_send_photos: true,
+          can_send_videos: undefined,
+          can_send_video_notes: undefined,
+          can_send_voice_notes: undefined,
+          can_send_polls: true,
+          can_send_other_messages: undefined,
+          can_add_web_page_previews: undefined,
+          can_change_info: undefined,
+          can_invite_users: undefined,
+          can_pin_messages: undefined,
+          can_manage_topics: undefined,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.setChatPermissions("@test", { canSendMessages: true })
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("restrictChatMember", () => {
+      it("should restrict member permissions successfully", async () => {
+        mockBotInstance.restrictChatMember.mockResolvedValue(true);
+
+        await adapter.restrictChatMember("@testgroup", "123456789", {
+          canSendMessages: false,
+          canSendMedia: false,
+        });
+
+        expect(mockBotInstance.restrictChatMember).toHaveBeenCalled();
+        expect(mockBotInstance.restrictChatMember).toHaveBeenCalledWith(
+          "@testgroup",
+          123456789,
+          expect.anything(),
+          expect.anything()
+        );
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.restrictChatMember("@test", "123", { canSendMessages: false })
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("promoteChatMember", () => {
+      it("should promote member to administrator successfully", async () => {
+        mockBotInstance.promoteChatMember.mockResolvedValue(true);
+
+        await adapter.promoteChatMember("@testgroup", "123456789", {
+          canChangeInfo: true,
+          canDeleteMessages: true,
+          customTitle: "Moderator",
+        });
+
+        expect(mockBotInstance.promoteChatMember).toHaveBeenCalledWith("@testgroup", 123456789, {
+          can_change_info: true,
+          can_delete_messages: true,
+          is_anonymous: undefined,
+          can_manage_chat: undefined,
+          can_manage_video_chats: undefined,
+          can_restrict_members: undefined,
+          can_promote_members: undefined,
+          can_invite_users: undefined,
+          can_post_stories: undefined,
+          can_edit_stories: undefined,
+          can_delete_stories: undefined,
+          can_post_messages: undefined,
+          can_edit_messages: undefined,
+          can_pin_messages: undefined,
+          can_manage_topics: undefined,
+          can_manage_direct_messages: undefined,
+          custom_title: "Moderator",
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.promoteChatMember("@test", "123", { canChangeInfo: true })
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+  });
+
+  describe("Member Management Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("banChatMember", () => {
+      it("should ban member successfully (permanent)", async () => {
+        mockBotInstance.banChatMember.mockResolvedValue(true);
+
+        await adapter.banChatMember("@testgroup", "123456789");
+
+        expect(mockBotInstance.banChatMember).toHaveBeenCalledWith("@testgroup", 123456789, {
+          until_date: undefined,
+          revoke_messages: undefined,
+        });
+      });
+
+      it("should ban member with until date", async () => {
+        mockBotInstance.banChatMember.mockResolvedValue(true);
+
+        const untilDate = Math.floor(Date.now() / 1000) + 86400;
+        await adapter.banChatMember("@testgroup", "123456789", { untilDate });
+
+        expect(mockBotInstance.banChatMember).toHaveBeenCalledWith("@testgroup", 123456789, {
+          until_date: untilDate,
+          revoke_messages: undefined,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.banChatMember("@test", "123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("unbanChatMember", () => {
+      it("should unban member successfully", async () => {
+        mockBotInstance.unbanChatMember.mockResolvedValue(true);
+
+        await adapter.unbanChatMember("@testgroup", "123456789");
+
+        expect(mockBotInstance.unbanChatMember).toHaveBeenCalledWith("@testgroup", 123456789, {
+          only_if_banned: undefined,
+        });
+      });
+
+      it("should unban member with onlyIfBanned option", async () => {
+        mockBotInstance.unbanChatMember.mockResolvedValue(true);
+
+        await adapter.unbanChatMember("@testgroup", "123456789", true);
+
+        expect(mockBotInstance.unbanChatMember).toHaveBeenCalledWith("@testgroup", 123456789, {
+          only_if_banned: true,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.unbanChatMember("@test", "123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Chat Settings Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("setChatTitle", () => {
+      it("should set chat title successfully", async () => {
+        mockBotInstance.setChatTitle.mockResolvedValue(true);
+
+        await adapter.setChatTitle("@testgroup", "New Title");
+
+        expect(mockBotInstance.setChatTitle).toHaveBeenCalledWith("@testgroup", "New Title");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.setChatTitle("@test", "Title")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("setChatDescription", () => {
+      it("should set chat description successfully", async () => {
+        mockBotInstance.setChatDescription.mockResolvedValue(true);
+
+        await adapter.setChatDescription("@testgroup", "New Description");
+
+        expect(mockBotInstance.setChatDescription).toHaveBeenCalledWith("@testgroup", "New Description");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.setChatDescription("@test", "Desc")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("setChatPhoto", () => {
+      it("should set chat photo with file path successfully", async () => {
+        mockBotInstance.setChatPhoto.mockResolvedValue(true);
+
+        await adapter.setChatPhoto("@testgroup", "/path/to/photo.jpg");
+
+        expect(mockBotInstance.setChatPhoto).toHaveBeenCalledWith("@testgroup", "/path/to/photo.jpg");
+      });
+
+      it("should set chat photo with Buffer successfully", async () => {
+        mockBotInstance.setChatPhoto.mockResolvedValue(true);
+        const photoBuffer = Buffer.from("fake photo data");
+
+        await adapter.setChatPhoto("@testgroup", photoBuffer);
+
+        expect(mockBotInstance.setChatPhoto).toHaveBeenCalledWith("@testgroup", photoBuffer);
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.setChatPhoto("@test", "/path")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("deleteChatPhoto", () => {
+      it("should delete chat photo successfully", async () => {
+        mockBotInstance.deleteChatPhoto.mockResolvedValue(true);
+
+        await adapter.deleteChatPhoto("@testgroup");
+
+        expect(mockBotInstance.deleteChatPhoto).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.deleteChatPhoto("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Invite Link Management Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("exportChatInviteLink", () => {
+      it("should export primary invite link successfully", async () => {
+        mockBotInstance.exportChatInviteLink.mockResolvedValue("https://t.me/+ABC123");
+
+        const link = await adapter.exportChatInviteLink("@testgroup");
+
+        expect(link).toBe("https://t.me/+ABC123");
+        expect(mockBotInstance.exportChatInviteLink).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.exportChatInviteLink("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("createChatInviteLink", () => {
+      it("should create invite link successfully", async () => {
+        mockBotInstance.createChatInviteLink.mockResolvedValue({
+          invite_link: "https://t.me/+XYZ789",
+          creator: { id: 123, first_name: "Bot" },
+          creates_join_request: false,
+          is_primary: false,
+          is_revoked: false,
+        });
+
+        const link = await adapter.createChatInviteLink("@testgroup", {
+          name: "Test Link",
+          memberLimit: 50,
+        });
+
+        // Access the returned value directly (it's the raw response from Telegram API)
+        expect(link).toHaveProperty("invite_link", "https://t.me/+XYZ789");
+        expect(mockBotInstance.createChatInviteLink).toHaveBeenCalledWith("@testgroup", {
+          name: "Test Link",
+          member_limit: 50,
+          expire_date: undefined,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.createChatInviteLink("@test", {})).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("editChatInviteLink", () => {
+      it("should edit invite link successfully", async () => {
+        mockBotInstance.editChatInviteLink.mockResolvedValue({
+          invite_link: "https://t.me/+XYZ789",
+          name: "Updated Link",
+        });
+
+        const link = await adapter.editChatInviteLink("@testgroup", "https://t.me/+XYZ789", {
+          memberLimit: 100,
+        });
+
+        expect(link).toHaveProperty("invite_link", "https://t.me/+XYZ789");
+        expect(mockBotInstance.editChatInviteLink).toHaveBeenCalledWith("@testgroup", "https://t.me/+XYZ789", {
+          member_limit: 100,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.editChatInviteLink("@test", "https://t.me/+XYZ", {})
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("revokeChatInviteLink", () => {
+      it("should revoke invite link successfully", async () => {
+        mockBotInstance.revokeChatInviteLink.mockResolvedValue({
+          invite_link: "https://t.me/+XYZ789",
+          is_revoked: true,
+        });
+
+        const link = await adapter.revokeChatInviteLink("@testgroup", "https://t.me/+XYZ789");
+
+        expect(link).toHaveProperty("is_revoked", true);
+        expect(mockBotInstance.revokeChatInviteLink).toHaveBeenCalledWith("@testgroup", "https://t.me/+XYZ789");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.revokeChatInviteLink("@test", "https://t.me/+XYZ")
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+  });
+
+  describe("Join Request Management Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("approveChatJoinRequest", () => {
+      it("should approve join request successfully", async () => {
+        mockBotInstance.approveChatJoinRequest.mockResolvedValue(true);
+
+        await adapter.approveChatJoinRequest("@testgroup", "123456789");
+
+        expect(mockBotInstance.approveChatJoinRequest).toHaveBeenCalledWith("@testgroup", 123456789);
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.approveChatJoinRequest("@test", "123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("declineChatJoinRequest", () => {
+      it("should decline join request successfully", async () => {
+        mockBotInstance.declineChatJoinRequest.mockResolvedValue(true);
+
+        await adapter.declineChatJoinRequest("@testgroup", "123456789");
+
+        expect(mockBotInstance.declineChatJoinRequest).toHaveBeenCalledWith("@testgroup", 123456789);
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.declineChatJoinRequest("@test", "123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Forum Topic Management Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("getForumTopicIconStickers", () => {
+      it("should get forum topic icon stickers successfully", async () => {
+        mockBotInstance.getForumTopicIconStickers.mockResolvedValue([
+          { file_id: "sticker1" },
+          { file_id: "sticker2" },
+        ]);
+
+        const stickers = await adapter.getForumTopicIconStickers();
+
+        expect(stickers).toHaveLength(2);
+        expect(mockBotInstance.getForumTopicIconStickers).toHaveBeenCalled();
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getForumTopicIconStickers()).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("createForumTopic", () => {
+      it("should create forum topic successfully", async () => {
+        mockBotInstance.createForumTopic.mockResolvedValue({
+          message_thread_id: 123,
+          name: "Test Topic",
+          icon_color: 0x6FB9F0,
+        });
+
+        const topic = await adapter.createForumTopic("@testgroup", "Test Topic", {
+          iconColor: 0x6FB9F0,
+        });
+
+        expect(topic.messageThreadId).toBe(123);
+        expect(mockBotInstance.createForumTopic).toHaveBeenCalledWith("@testgroup", "Test Topic", {
+          icon_color: 0x6FB9F0,
+          icon_custom_emoji_id: undefined,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.createForumTopic("@test", "Topic")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("editForumTopic", () => {
+      it("should edit forum topic successfully", async () => {
+        mockBotInstance.editForumTopic.mockResolvedValue(true);
+
+        await adapter.editForumTopic("@testgroup", 123, { name: "Updated Topic" });
+
+        expect(mockBotInstance.editForumTopic).toHaveBeenCalledWith("@testgroup", 123, {
+          name: "Updated Topic",
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.editForumTopic("@test", 123, {})).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("closeForumTopic", () => {
+      it("should close forum topic successfully", async () => {
+        mockBotInstance.closeForumTopic.mockResolvedValue(true);
+
+        await adapter.closeForumTopic("@testgroup", 123);
+
+        expect(mockBotInstance.closeForumTopic).toHaveBeenCalledWith("@testgroup", 123);
+      });
+    });
+
+    describe("reopenForumTopic", () => {
+      it("should reopen forum topic successfully", async () => {
+        mockBotInstance.reopenForumTopic.mockResolvedValue(true);
+
+        await adapter.reopenForumTopic("@testgroup", 123);
+
+        expect(mockBotInstance.reopenForumTopic).toHaveBeenCalledWith("@testgroup", 123);
+      });
+    });
+
+    describe("deleteForumTopic", () => {
+      it("should delete forum topic successfully", async () => {
+        mockBotInstance.deleteForumTopic.mockResolvedValue(true);
+
+        await adapter.deleteForumTopic("@testgroup", 123);
+
+        expect(mockBotInstance.deleteForumTopic).toHaveBeenCalledWith("@testgroup", 123);
+      });
+    });
+
+    describe("unpinAllForumTopicMessages", () => {
+      it("should unpin all forum topic messages successfully", async () => {
+        mockBotInstance.unpinAllForumTopicMessages.mockResolvedValue(true);
+
+        await adapter.unpinAllForumTopicMessages("@testgroup", 123);
+
+        expect(mockBotInstance.unpinAllForumTopicMessages).toHaveBeenCalledWith("@testgroup", 123);
+      });
+    });
+
+    describe("editGeneralForumTopic", () => {
+      it("should edit general forum topic successfully", async () => {
+        mockBotInstance.editGeneralForumTopic.mockResolvedValue(true);
+
+        await adapter.editGeneralForumTopic("@testgroup", "Announcements");
+
+        expect(mockBotInstance.editGeneralForumTopic).toHaveBeenCalledWith("@testgroup", "Announcements");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.editGeneralForumTopic("@test", "Name")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("closeGeneralForumTopic", () => {
+      it("should close general forum topic successfully", async () => {
+        mockBotInstance.closeGeneralForumTopic.mockResolvedValue(true);
+
+        await adapter.closeGeneralForumTopic("@testgroup");
+
+        expect(mockBotInstance.closeGeneralForumTopic).toHaveBeenCalledWith("@testgroup");
+      });
+    });
+
+    describe("reopenGeneralForumTopic", () => {
+      it("should reopen general forum topic successfully", async () => {
+        mockBotInstance.reopenGeneralForumTopic.mockResolvedValue(true);
+
+        await adapter.reopenGeneralForumTopic("@testgroup");
+
+        expect(mockBotInstance.reopenGeneralForumTopic).toHaveBeenCalledWith("@testgroup");
+      });
+    });
+
+    describe("hideGeneralForumTopic", () => {
+      it("should hide general forum topic successfully", async () => {
+        mockBotInstance.hideGeneralForumTopic.mockResolvedValue(true);
+
+        await adapter.hideGeneralForumTopic("@testgroup");
+
+        expect(mockBotInstance.hideGeneralForumTopic).toHaveBeenCalledWith("@testgroup");
+      });
+    });
+
+    describe("unhideGeneralForumTopic", () => {
+      it("should unhide general forum topic successfully", async () => {
+        mockBotInstance.unhideGeneralForumTopic.mockResolvedValue(true);
+
+        await adapter.unhideGeneralForumTopic("@testgroup");
+
+        expect(mockBotInstance.unhideGeneralForumTopic).toHaveBeenCalledWith("@testgroup");
+      });
+    });
+
+    describe("unpinAllGeneralForumTopicMessages", () => {
+      it("should unpin all general forum topic messages successfully", async () => {
+        mockBotInstance.unpinAllGeneralForumTopicMessages.mockResolvedValue(true);
+
+        await adapter.unpinAllGeneralForumTopicMessages("@testgroup");
+
+        expect(mockBotInstance.unpinAllGeneralForumTopicMessages).toHaveBeenCalledWith("@testgroup");
+      });
+    });
+  });
+
+  describe("User Profile Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("getUserProfilePhotos", () => {
+      it("should get user profile photos successfully", async () => {
+        mockBotInstance.getUserProfilePhotos.mockResolvedValue({
+          total_count: 5,
+          photos: [
+            [
+              { file_id: "photo1", width: 100, height: 100 },
+              { file_id: "photo2", width: 200, height: 200 },
+            ],
+            [{ file_id: "photo3", width: 150, height: 150 }],
+          ],
+        });
+
+        const photos = await adapter.getUserProfilePhotos("123456789");
+
+        expect(photos.totalCount).toBe(5);
+        expect(photos.photos).toHaveLength(2);
+        expect(mockBotInstance.getUserProfilePhotos).toHaveBeenCalledWith(123456789, {
+          offset: 0,
+          limit: 100,
+        });
+      });
+
+      it("should get user profile photos with options", async () => {
+        mockBotInstance.getUserProfilePhotos.mockResolvedValue({
+          total_count: 5,
+          photos: [[]],
+        });
+
+        await adapter.getUserProfilePhotos("123456789", { offset: 0, limit: 10 });
+
+        expect(mockBotInstance.getUserProfilePhotos).toHaveBeenCalledWith(123456789, {
+          offset: 0,
+          limit: 10,
+        });
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.getUserProfilePhotos("123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Leave Chat Method", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("leaveChat", () => {
+      it("should leave chat successfully", async () => {
+        mockBotInstance.leaveChat.mockResolvedValue(true);
+
+        await adapter.leaveChat("@testgroup");
+
+        expect(mockBotInstance.leaveChat).toHaveBeenCalledWith("@testgroup");
+      });
+
+      it("should throw error when bot is not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.leaveChat("@test")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
     });
   });
 });

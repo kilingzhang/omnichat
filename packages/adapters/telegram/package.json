@@ -15,7 +15,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest",
-    "test:unit": "vitest run src/**/*.test.ts",
+    "test:unit": "vitest run --reporter=verbose src/adapter.test.ts",
+    "test:integration": "vitest run --reporter=verbose integration/chat-management.integration.test.ts",
     "test:coverage": "vitest run --coverage"
   },
   "keywords": [
@@ -38,10 +39,10 @@
     }
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.0.0",
     "@types/node": "^20.11.0",
     "@types/node-telegram-bot-api": "^0.64.5",
+    "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.3.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.18"
   }
 }

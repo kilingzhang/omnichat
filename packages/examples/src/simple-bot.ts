@@ -3,6 +3,169 @@ import { TelegramAdapter } from "@omnichat/telegram";
 import type { Message } from "@omnichat/core";
 import { loadConfig } from "./config.js";
 
+// ============================================================================
+// Command Registry - 统一管理所有命令
+// ============================================================================
+
+interface CommandHandler {
+  description: string;
+  handler: (message: Message, sdk: SDK) => Promise<void>;
+}
+
+const commands: Record<string, CommandHandler> = {
+  "/start": {
+    description: "显示欢迎消息和使用帮助",
+    handler: async (message, sdk) => {
+      const helpText = generateHelpText();
+      await sdk.send("telegram", { text: helpText }, { to: message.from.id });
+      console.log("✅ Welcome message sent");
+    },
+  },
+
+  "/help": {
+    description: "显示所有可用命令",
+    handler: async (message, sdk) => {
+      const helpText = generateHelpText();
+      await sdk.send("telegram", { text: helpText }, { to: message.from.id });
+      console.log("✅ Help message sent");
+    },
+  },
+
+  "/id": {
+    description: "获取 Chat ID 和 User ID（用于测试）",
+    handler: async (message, sdk) => {
+      console.log("📤 Command: /id");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("🆔 IDs for testing:");
+
+      const isPrivateChat = message.to.type === "user";
+
+      if (isPrivateChat) {
+        // Private chat: chat ID is the same as user ID
+        console.log("   Chat Type: Private (Direct Message)");
+        console.log("   Chat ID/User ID:", message.from.id);
+        console.log("━━━━━━━━━━━━━━━━━━━━━━");
+
+        const idInfo = [
+          "🆔 Chat & User IDs (Private Chat)",
+          "",
+          "📝 Chat Type: Private (Direct Message)",
+          `👤 Your ID: ${message.from.id}`,
+          "",
+          "💡 For integration tests, use:",
+          `   TELEGRAM_CHAT_ID=${message.from.id}`,
+          `   TELEGRAM_USER_ID=${message.from.id}`,
+          "",
+          "⚠️ Note: In private chats, Chat ID = User ID",
+        ];
+
+        await sdk.send("telegram", { text: idInfo.join("\n") }, { to: message.from.id });
+      } else {
+        // Group/Channel chat
+        console.log("   Chat Type:", message.to.type);
+        console.log("   Chat ID:", message.to.id);
+        console.log("   User ID:", message.from.id);
+        console.log("━━━━━━━━━━━━━━━━━━━━━━");
+
+        const idInfo = [
+          "🆔 Chat & User IDs",
+          "",
+          `👥 Chat ID: ${message.to.id}`,
+          `👤 User ID: ${message.from.id}`,
+          `📝 Chat Type: ${message.to.type}`,
+          "",
+          "💡 Copy these for integration tests:",
+          `   TELEGRAM_CHAT_ID=${message.to.id}`,
+          `   TELEGRAM_USER_ID=${message.from.id}`,
+        ];
+
+        await sdk.send("telegram", { text: idInfo.join("\n") }, { to: message.from.id });
+      }
+
+      console.log("✅ ID info sent");
+    },
+  },
+
+  "/info": {
+    description: "获取信息 /info [media|user|msg]",
+    handler: async (message, sdk) => {
+      const text = message.content.text ? message.content.text.trim() : "";
+      const args = text.split(" ");
+      const target = args[1];
+
+      console.log("📤 Command: /info", target || "[no args]");
+
+      if (!target) {
+        // 没有参数时显示当前消息的基本信息
+        const response = [
+          `📊 当前消息信息:`,
+          `类型: ${message.content.mediaType || "文本"}`,
+          `消息ID: ${message.messageId}`,
+          `发送者: ${message.from.name || message.from.id}`,
+          `发送者ID: ${message.from.id}`,
+        ];
+        if (message.content.mediaUrl) {
+          response.push(`媒体URL: ${message.content.mediaUrl}`);
+        }
+        if (message.content.text) {
+          response.push(`文本: ${message.content.text}`);
+        }
+
+        await sdk.send("telegram", { text: response.join("\n") }, { to: message.from.id });
+        console.log("✅ Message info sent");
+        return;
+      }
+
+      if (target === "media") {
+        const hasMedia = message.content.mediaUrl && message.content.mediaUrl.startsWith("http");
+        if (!hasMedia) {
+          await sdk.send("telegram", { text: "❓ This message has no media" }, { to: message.from.id });
+          console.log("⚠️ No media found");
+        } else {
+          await sdk.send("telegram", {
+            text: `📊 Media Info:\n\nType: ${message.content.mediaType}\nURL: ${message.content.mediaUrl}\nMessage ID: ${message.messageId}`,
+          }, { to: message.from.id });
+          console.log("✅ Media info sent");
+        }
+      } else if (target === "user") {
+        await sdk.send("telegram", {
+          text: `👤 User Info:\n\nName: ${message.from.name || "N/A"}\nID: ${message.from.id}\nType: ${message.from.type}`,
+        }, { to: message.from.id });
+        console.log("✅ User info sent");
+      } else if (target === "msg") {
+        await sdk.send("telegram", {
+          text: `📨 Message Info:\n\nType: ${message.type}\nID: ${message.messageId}\nFrom: ${message.from.id}\nText: ${message.content.text || "[No text]"}`,
+        }, { to: message.from.id });
+        console.log("✅ Message info sent");
+      } else {
+        await sdk.send("telegram", { text: "❓ Unknown info type. Try: media, user, msg" }, { to: message.from.id });
+        console.log("⚠️ Unknown target");
+      }
+    },
+  },
+};
+
+// 生成帮助文本（自动从命令注册表生成）
+function generateHelpText(): string {
+  const lines = [
+    "🤖 Welcome to Simple Bot!",
+    "",
+    "💬 Just send me anything and I'll echo back!",
+    "",
+    "💡 Available Commands:",
+  ];
+
+  for (const [cmd, info] of Object.entries(commands)) {
+    lines.push(`   ${cmd} - ${info.description}`);
+  }
+
+  return lines.join("\n");
+}
+
+// ============================================================================
+// Main Application
+// ============================================================================
+
 async function main() {
   console.log("🚀 Starting Simple Bot...");
   console.log("━━━━━━━━━━━━━━━━━━━━━");
@@ -120,14 +283,32 @@ async function main() {
 
     console.log("");
 
-    const text = message.content.text ? message.content.text.trim().toLowerCase() : "";
+    const text = message.content.text ? message.content.text.trim() : "";
+    const textLower = text.toLowerCase();
+
+    // 移除 bot 的 @mention（如果有的话）
+    // 例如："@imsdkbot /id" -> "/id"
+    const cleanText = textLower.replace(/^@\w+\s+/, '');
+
     const hasMedia = message.content.mediaUrl && message.content.mediaUrl.startsWith("http");
-    
-    console.log("🔤 Processing command:", text || "[no command]");
+
+    // 检查 bot 是否被 @提及
+    const botMentionPattern = new RegExp(`@${message.to.name}`, 'i');
+    const isMentioned = textLower.match(/^@\w+/) || botMentionPattern.test(textLower);
+
+    console.log("🔤 Original text:", text || "[no text]");
+    console.log("🔤 Cleaned text:", cleanText || "[no command]");
     console.log("📦 Has Media:", hasMedia ? "Yes" : "No");
+    console.log("🏷️  Bot mentioned:", isMentioned ? "Yes" : "No");
     console.log("");
 
     try {
+      // 在群里，只响应被 @ 的消息
+      if (message.to.type !== "user" && !isMentioned) {
+        console.log("⏭️  Skipping message (bot not mentioned in group)");
+        return;
+      }
+
       // Send typing indicator before responding
       const telegramAdapter = sdk.getAdapter("telegram") as any;
       if (telegramAdapter && typeof telegramAdapter.sendChatAction === "function") {
@@ -136,81 +317,31 @@ async function main() {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
 
-      if (text === "/start" || text === "/help") {
-        console.log("📤 Command: /start or /help");
+      // ============================================================================
+      // Command Router - 统一的命令路由
+      // ============================================================================
 
-        await sdk.send("telegram", {
-          text: "🤖 Welcome to Simple Bot!\n\n💬 Just send me anything and I'll echo back!\n\n💡 Commands:\n   /start, /help - Show this message",
-        }, {
-          to: message.from.id,
-        });
-
-        console.log("✅ Welcome message sent");
-      } else if (text.startsWith("/info ")) {
-        const args = text.split(" ");
-        const target = args[1];
-        
-        console.log("📤 Command: /info", target);
-        
-        if (target === "media") {
-          if (!hasMedia) {
-            await sdk.send("telegram", {
-              text: "❓ No media in this message",
-            }, {
-              to: message.from.id,
-            });
-            console.log("⚠️ No media found");
+      // 检查是否是命令
+      if (cleanText.startsWith("/")) {
+        // 尝试精确匹配
+        if (commands[cleanText]) {
+          console.log(`📤 Command: ${cleanText}`);
+          await commands[cleanText].handler(message, sdk);
+        }
+        // 尝试前缀匹配（对于带参数的命令，如 /info media）
+        else {
+          const matchedCommand = Object.keys(commands).find(cmd => cleanText.startsWith(cmd + " "));
+          if (matchedCommand) {
+            console.log(`📤 Command: ${matchedCommand}`);
+            await commands[matchedCommand].handler(message, sdk);
           } else {
+            // 未知命令
+            console.log(`⚠️ Unknown command: ${cleanText}`);
             await sdk.send("telegram", {
-              text: `📊 Media Info:\n\nType: ${message.content.mediaType}\nURL: ${message.content.mediaUrl}\nMessage ID: ${message.messageId}`,
-            }, {
-              to: message.from.id,
-            });
-            console.log("✅ Media info sent");
+              text: `❓ 未知命令: ${cleanText}\n\n发送 /help 查看所有可用命令`,
+            }, { to: message.from.id });
           }
-        } else if (target === "user") {
-          await sdk.send("telegram", {
-            text: `👤 User Info:\n\nName: ${message.from.name || "N/A"}\nID: ${message.from.id}\nType: ${message.from.type}`,
-          }, {
-            to: message.from.id,
-          });
-          console.log("✅ User info sent");
-        } else if (target === "msg") {
-          await sdk.send("telegram", {
-            text: `📨 Message Info:\n\nType: ${message.type}\nID: ${message.messageId}\nFrom: ${message.from.id}\nText: ${message.content.text || "[No text]"}`,
-          }, {
-            to: message.from.id,
-          });
-          console.log("✅ Message info sent");
-        } else {
-          await sdk.send("telegram", {
-            text: "❓ Unknown info type. Try: media, user, msg",
-          }, {
-            to: message.from.id,
-          });
-          console.log("⚠️ Unknown target");
         }
-      } else if (text === "/info") {
-        console.log("📤 Command: /info");
-        
-        const response: string[] = [];
-        response.push(`📊 Attachment Info:`);
-        response.push(`Type: ${message.content.mediaType || "None"}`);
-        if (message.content.mediaUrl) {
-          response.push(`URL: ${message.content.mediaUrl}`);
-        }
-        response.push(`Message ID: ${message.messageId}`);
-        response.push("");
-        response.push(`👤 From: ${message.from.name || message.from.id}`);
-        response.push(`ID: ${message.from.id}`);
-        
-        await sdk.send("telegram", {
-          text: response.join("\n"),
-        }, {
-          to: message.from.id,
-        });
-        
-        console.log("✅ Info sent");
       } else {
         console.log("📤 Command: echo");
 
