@@ -18,6 +18,10 @@
     "test:unit": "vitest run --reporter=verbose src/adapter.test.ts",
     "test:integration": "vitest run --reporter=verbose integration/chat-management.integration.test.ts",
     "test:integration:smart": "sh -c 'export $(cat integration/.env 2>/dev/null | grep -v \"^#\" | xargs) && vitest run --reporter=verbose integration/smart-type-inference.integration.test.ts'",
+    "test:integration:message-ops": "sh -c 'export $(cat integration/.env 2>/dev/null | grep -v \"^#\" | xargs) && vitest run --reporter=verbose integration/message-operations.integration.test.ts'",
+    "test:integration:interactive": "sh -c 'export $(cat integration/.env 2>/dev/null | grep -v \"^#\" | xargs) && vitest run --reporter=verbose integration/interactive-features.integration.test.ts'",
+    "test:integration:bot-config": "sh -c 'export $(cat integration/.env 2>/dev/null | grep -v \"^#\" | xargs) && vitest run --reporter=verbose integration/bot-configuration.integration.test.ts'",
+    "test:integration:all": "sh -c 'export $(cat integration/.env 2>/dev/null | grep -v \"^#\" | xargs) && vitest run --reporter=verbose integration'",
     "test:all": "vitest run --reporter=verbose",
     "test:coverage": "vitest run --coverage"
   },
