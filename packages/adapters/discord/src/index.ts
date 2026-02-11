@@ -1,2 +1,22 @@
 export { DiscordAdapter } from "./adapter.js";
-export type { DiscordConfig } from "./adapter.js";
+export type {
+  DiscordConfig,
+  DiscordEmbed,
+  DiscordButton,
+  DiscordActionRow,
+  ApplicationCommand,
+  ApplicationCommandOption,
+  ApplicationCommandType,
+  ApplicationCommandOptionType,
+  DiscordInteraction,
+  InteractionHandler,
+  InteractionResponse,
+  InteractionResponseType,
+  InteractionCallbackData,
+  DiscordModal,
+  DiscordTextInput,
+  DiscordSelectMenu,
+  DiscordEntitySelectMenu,
+  DiscordWebhook,
+  DiscordSendContent,
+} from "./adapter.js";

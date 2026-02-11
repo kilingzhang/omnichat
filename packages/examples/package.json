@@ -13,26 +13,23 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/unified-bot.js",
-    "dev": "tsx src/unified-bot.ts",
-    "dev:simple": "tsx src/simple-bot.ts",
-    "dev:chat": "tsx src/telegram-chat-management.ts",
-    "dev:smart": "tsx src/smart-type-inference-example.ts",
-    "start:bg": "bash start-bg.sh",
-    "stop": "bash stop.sh",
-    "restart": "bash restart.sh",
-    "status": "bash status.sh",
-    "logs": "bash logs-enhanced.sh"
+    "start": "node dist/bots/group-assistant/index.js",
+    "dev": "tsx src/bots/group-assistant/index.ts"
   },
   "dependencies": {
     "@omnichat/core": "workspace:*",
-    "@omnichat/telegram": "workspace:*"
+    "@omnichat/telegram": "workspace:*",
+    "@omnichat/discord": "workspace:*"
   },
   "peerDependencies": {
-    "node-telegram-bot-api": "^0.67.0"
+    "node-telegram-bot-api": "^0.67.0",
+    "discord.js": "^14.14.0"
   },
   "peerDependenciesMeta": {
     "node-telegram-bot-api": {
+      "optional": true
+    },
+    "discord.js": {
       "optional": true
     }
   },

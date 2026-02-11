@@ -10,6 +10,7 @@ export type {
   InteractionAdapter,
   DiscoveryAdapter,
   ManagementAdapter,
+  AdvancedAdapter,
   FullAdapter,
   PollInput,
   PollResult,
@@ -41,6 +42,7 @@ export type {
   InteractionCapabilities,
   DiscoveryCapabilities,
   ManagementCapabilities,
+  AdvancedCapabilities,
 } from "./models/capabilities.js";
 export { defaultCapabilities, mergeCapabilities, hasCapability } from "./models/capabilities.js";
 
@@ -99,3 +101,63 @@ export { StorageManager, LocalFileStorage } from "./storage/index.js";
 // Middleware
 export { createAutoSaveMediaMiddleware } from "./middleware/auto-save-media.js";
 export type { AutoSaveMediaConfig } from "./middleware/auto-save-media.js";
+
+// Universal Features
+export type {
+  UniversalComponent,
+  UniversalButtonType,
+  ComponentStyle,
+  SelectOption,
+  UniversalInteractiveElements,
+  ComponentLayout,
+  Mention,
+  MentionType,
+  Attachment,
+  AttachmentType,
+  Embed,
+  UniversalSendContent,
+  PlatformSpecificOptions,
+  TelegramOptions,
+  DiscordOptions,
+  SlackOptions,
+  WhatsAppOptions,
+  SignalOptions,
+  iMessageOptions,
+  CommandParameter,
+  CommandParameterType,
+  UniversalCommand,
+  CommandContext,
+  SearchResult,
+  SearchResultType,
+  UniversalSearch,
+  UserManagement,
+  UserManagementAction,
+  PermissionSet,
+  UniversalInviteOptions,
+  UniversalInviteResult,
+  ReferralParams,
+  EmbeddedUI,
+  EmbeddedUIType,
+  EmbeddedUISize,
+  Thread,
+  ThreadMessage,
+  FeatureCapability,
+  PlatformFeatureMatrix,
+} from "./models/universal-features.js";
+export {
+  UniversalFeatureRegistry,
+} from "./models/universal-features.js";
+
+// Feature Adapters
+export {
+  BaseFeatureAdapter,
+  TelegramButtonAdapter,
+  DiscordButtonAdapter,
+  SlackButtonAdapter,
+  WhatsAppButtonAdapter,
+  ComponentTransformer,
+} from "./utils/feature-adapter.js";
+export type {
+  PlatformAdapter,
+  AdapterTransformation,
+} from "./models/universal-features.js";

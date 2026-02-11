@@ -63,6 +63,9 @@ packages/*/storage/
 # --- Bot Runtime Files ---
 *.pid
 bot.log
+.bot.log
+.bot.log.old
+.bot.pid
 packages/examples/logs/
 packages/examples/*.pid
 

@@ -9,6 +9,11 @@ import type { Message, SendContent, SendOptions, SendResult } from "../models/me
 import type { ExtendedMessage } from "../models/extended-message.js";
 import type { Capabilities } from "../models/capabilities.js";
 import type { StorageConfig } from "../storage/storage.js";
+import type {
+  UniversalSendContent,
+  UniversalInteractiveElements,
+  PlatformSpecificOptions,
+} from "../models/universal-features.js";
 import {
   AdapterNotFoundError,
   CapabilityNotSupportedError,
@@ -16,6 +21,7 @@ import {
 } from "../errors/index.js";
 import { StorageManager } from "../storage/manager.js";
 import { extendMessage } from "../models/extended-message.js";
+import { ComponentTransformer } from "../utils/feature-adapter.js";
 
 /**
  * SDK initialization options
@@ -257,6 +263,193 @@ export class SDK {
     }
 
     return adapter.removeReaction(messageId, emoji);
+  }
+
+  /**
+   * Send message with universal components (cross-platform)
+   * Automatically transforms components to platform-specific format
+   */
+  async sendWithComponents(
+    platform: string,
+    target: string,
+    content: UniversalSendContent,
+    options?: SendOptions & { to?: string }
+  ): Promise<SendResult> {
+    const adapter = this.adapters.get(platform);
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    const { to, ...sendOptions } = options || {};
+    const finalTarget = to || target;
+
+    // Transform universal components to platform-specific format
+    let transformedContent: SendContent = {
+      text: content.text,
+      mediaUrl: content.mediaUrl,
+      mediaType: content.mediaType,
+      stickerId: content.stickerId,
+      poll: content.poll,
+      buttons: undefined, // Will be set by transformation
+    };
+
+    // Transform components if present
+    if (content.components) {
+      const transformation = ComponentTransformer.transform(platform, content.components);
+
+      if (transformation.success && transformation.data) {
+        // Apply platform-specific transformation
+        const platformData = transformation.data;
+
+        // Extract buttons from platform-specific format
+        if (platformData.reply_markup) {
+          // Telegram
+          transformedContent.buttons = this.extractButtonsFromTelegram(platformData.reply_markup);
+        } else if (platformData.components) {
+          // Discord
+          transformedContent.buttons = this.extractButtonsFromDiscord(platformData.components);
+        } else if (platformData.blocks) {
+          // Slack
+          transformedContent.buttons = this.extractButtonsFromSlack(platformData.blocks);
+        } else if (platformData.action && platformData.action.buttons) {
+          // WhatsApp
+          transformedContent.buttons = this.extractButtonsFromWhatsApp(platformData.action.buttons);
+        }
+      }
+
+      // Log warnings if any
+      if (transformation.warnings && transformation.warnings.length > 0) {
+        console.warn(`Component transformation warnings for ${platform}:`, transformation.warnings);
+      }
+
+      // Log errors if any but still try to send
+      if (transformation.errors && transformation.errors.length > 0) {
+        console.warn(`Component transformation errors for ${platform}:`, transformation.errors);
+      }
+    }
+
+    // Merge platform-specific options
+    const finalOptions: SendOptions = {
+      ...sendOptions,
+      ...this.extractPlatformOptions(platform, content.platformOptions),
+    };
+
+    return adapter.send(finalTarget, transformedContent, finalOptions);
+  }
+
+  /**
+   * Check if platform supports a specific feature
+   */
+  supports(platform: string, featurePath: string): boolean {
+    const [category, capability] = featurePath.split(".") as [keyof Capabilities, string];
+    return this.hasCapability(platform, category, capability);
+  }
+
+  /**
+   * Get best platform for a feature (with fallback)
+   */
+  getBestPlatform(featurePath: string, platforms?: string[]): string | null {
+    const platformList = platforms || Array.from(this.adapters.keys());
+    const [category, capability] = featurePath.split(".") as [keyof Capabilities, string];
+
+    for (const platform of platformList) {
+      if (this.hasCapability(platform, category, capability)) {
+        return platform;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract buttons from Telegram inline_keyboard format
+   */
+  private extractButtonsFromTelegram(replyMarkup: any): Array<Array<{ text: string; data: string }>> {
+    if (!replyMarkup.inline_keyboard) return [];
+    return replyMarkup.inline_keyboard.map((row: any[]) =>
+      row.map((btn: any) => ({
+        text: btn.text,
+        data: btn.callback_data || btn.url,
+      }))
+    );
+  }
+
+  /**
+   * Extract buttons from Discord components format
+   */
+  private extractButtonsFromDiscord(components: any[]): Array<Array<{ text: string; data: string }>> {
+    return components.map((actionRow: any) =>
+      actionRow.components?.map((btn: any) => ({
+        text: btn.label,
+        data: btn.custom_id || btn.url,
+      })) || []
+    );
+  }
+
+  /**
+   * Extract buttons from Slack blocks format
+   */
+  private extractButtonsFromSlack(blocks: any[]): Array<Array<{ text: string; data: string }>> {
+    return blocks.map((block: any) =>
+      block.elements?.map((element: any) => ({
+        text: element.text?.text || element.text,
+        data: element.action_id || element.url,
+      })) || []
+    );
+  }
+
+  /**
+   * Extract buttons from WhatsApp interactive format
+   */
+  private extractButtonsFromWhatsApp(buttons: any[]): Array<Array<{ text: string; data: string }>> {
+    return [
+      buttons.map((btn: any) => ({
+        text: btn.title || btn.text,
+        data: btn.reply?.id || btn.url,
+      }))
+    ];
+  }
+
+  /**
+   * Extract platform-specific options from PlatformSpecificOptions
+   */
+  private extractPlatformOptions(platform: string, platformOptions?: PlatformSpecificOptions): SendOptions {
+    if (!platformOptions) return {};
+
+    const options: SendOptions = {};
+
+    switch (platform) {
+      case "telegram":
+        if (platformOptions.telegram) {
+          const telegramOpts = platformOptions.telegram;
+          if (telegramOpts.parseMode) {
+            options.parseMode = telegramOpts.parseMode.toLowerCase() as "markdown" | "html";
+          }
+          // Add more Telegram-specific options as needed
+        }
+        break;
+
+      case "discord":
+        if (platformOptions.discord) {
+          // Discord-specific options would go here
+          // Note: Discord doesn't use SendOptions the same way
+        }
+        break;
+
+      case "slack":
+        if (platformOptions.slack) {
+          // Slack-specific options would go here
+        }
+        break;
+
+      case "whatsapp":
+        if (platformOptions.whatsapp) {
+          // WhatsApp-specific options would go here
+        }
+        break;
+    }
+
+    return options;
   }
 
   /**

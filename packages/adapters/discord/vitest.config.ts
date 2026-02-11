@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import path from "path";
 
 export default defineConfig({
   test: {
@@ -10,6 +11,7 @@ export default defineConfig({
       "dist/",
       "**/*.d.ts",
     ],
+    setupFiles: ['./src/test-setup.ts'],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
@@ -18,7 +20,17 @@ export default defineConfig({
         "dist/",
         "**/*.test.ts",
         "**/*.d.ts",
+        "src/__mocks__/**",
+        "src/test-setup.ts",
       ],
+    },
+    resolveSnapshotPath: (base, path) => {
+      return path + '.snap';
+    },
+  },
+  resolve: {
+    alias: {
+      '@omnichat/discord': path.resolve(__dirname, './src'),
     },
   },
 });

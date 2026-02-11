@@ -16,7 +16,8 @@
     "dev": "tsc --watch",
     "test": "vitest",
     "test:unit": "vitest run src/**/*.test.ts",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run integration/**/*.test.ts"
   },
   "keywords": [
     "discord",

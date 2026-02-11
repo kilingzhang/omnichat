@@ -1,4 +1,22 @@
-import type { Message, SendContent, SendOptions, SendResult } from "../models/message.js";
+import type {
+  Message,
+  SendContent,
+  SendOptions,
+  SendResult,
+  InlineQuery,
+  InlineQueryResponse,
+  DeepLinkParams,
+  InviteLinkOptions,
+  InviteLinkResult,
+  WebAppInfo,
+  MenuButtonOptions,
+  ForumTopicOptions,
+  ForumTopicInfo,
+  ChatPermissions,
+  AdministratorRights,
+  WebhookInfo,
+  BatchOperationResult,
+} from "../models/message.js";
 import type { Capabilities } from "../models/capabilities.js";
 
 /**
@@ -215,6 +233,207 @@ export interface ManagementAdapter extends Adapter {
    * Delete a channel
    */
   deleteChannel?(channelId: string): Promise<void>;
+
+  /**
+   * Restrict user permissions
+   */
+  restrictUser?(chatId: string, userId: string, permissions: ChatPermissions): Promise<void>;
+
+  /**
+   * Promote user to administrator
+   */
+  promoteUser?(chatId: string, userId: string, rights: AdministratorRights): Promise<void>;
+
+  /**
+   * Ban user from chat
+   */
+  banChatUser?(chatId: string, userId: string, untilDate?: number): Promise<void>;
+
+  /**
+   * Unban user from chat
+   */
+  unbanChatUser?(chatId: string, userId: string): Promise<void>;
+
+  /**
+   * Kick user from chat
+   */
+  kickChatUser?(chatId: string, userId: string, untilDate?: number): Promise<void>;
+}
+
+/**
+ * Extended adapter interface with advanced capabilities
+ */
+export interface AdvancedAdapter extends Adapter {
+  /**
+   * Handle inline queries
+   */
+  onInlineQuery?(callback: (query: InlineQuery) => void | Promise<InlineQueryResponse>): void;
+
+  /**
+   * Answer inline query
+   */
+  answerInlineQuery?(queryId: string, results: any[], options?: { nextOffset?: string; switchPmText?: string; switchPmParameter?: string }): Promise<void>;
+
+  /**
+   * Create deep link / invite link
+   */
+  createInviteLink?(chatId: string, options?: InviteLinkOptions): Promise<InviteLinkResult>;
+
+  /**
+   * Edit invite link
+   */
+  editInviteLink?(chatId: string, link: string, options?: InviteLinkOptions): Promise<InviteLinkResult>;
+
+  /**
+   * Revoke invite link
+   */
+  revokeInviteLink?(chatId: string, link: string): Promise<InviteLinkResult>;
+
+  /**
+   * Export invite link
+   */
+  exportInviteLink?(chatId: string): Promise<string>;
+
+  /**
+   * Create forum topic
+   */
+  createForumTopic?(chatId: string, options: ForumTopicOptions): Promise<ForumTopicInfo>;
+
+  /**
+   * Edit forum topic
+   */
+  editForumTopic?(chatId: string, topicId: number, name: string, iconCustomEmojiId?: string): Promise<void>;
+
+  /**
+   * Close forum topic
+   */
+  closeForumTopic?(chatId: string, topicId: number): Promise<void>;
+
+  /**
+   * Reopen forum topic
+   */
+  reopenForumTopic?(chatId: string, topicId: number): Promise<void>;
+
+  /**
+   * Delete forum topic
+   */
+  deleteForumTopic?(chatId: string, topicId: number): Promise<void>;
+
+  /**
+   * Get forum topic info
+   */
+  getForumTopicInfo?(chatId: string, topicId: number): Promise<ForumTopicInfo>;
+
+  /**
+   * Get all forum topics
+   */
+  getForumTopics?(chatId: string): Promise<ForumTopicInfo[]>;
+
+  /**
+   * Generalize forum topic
+   */
+  generalizeForumTopic?(chatId: string, topicId: number): Promise<void>;
+
+  /**
+   * Hide general forum topic
+   */
+  hideGeneralForumTopic?(chatId: string): Promise<void>;
+
+  /**
+   * Unhide general forum topic
+   */
+  unhideGeneralForumTopic?(chatId: string): Promise<void>;
+
+  /**
+   * Send message with web app
+   */
+  sendWithWebApp?(target: string, text: string, webApp: WebAppInfo, options?: SendOptions): Promise<SendResult>;
+
+  /**
+   * Set chat menu button
+   */
+  setMenuButton?(options: MenuButtonOptions, chatId?: string): Promise<void>;
+
+  /**
+   * Get chat menu button
+   */
+  getMenuButton?(chatId?: string): Promise<MenuButtonOptions>;
+
+  /**
+   * Get webhook info
+   */
+  getWebhookInfo?(): Promise<WebhookInfo>;
+
+  /**
+   * Set webhook
+   */
+  setWebhook?(url: string, options?: {
+    certificate?: string;
+    ipAddress?: string;
+    maxConnections?: number;
+    allowedUpdates?: string[];
+    dropPendingUpdates?: boolean;
+    secretToken?: string;
+  }): Promise<boolean>;
+
+  /**
+   * Delete webhook
+   */
+  deleteWebhook?(dropPendingUpdates?: boolean): Promise<boolean>;
+
+  /**
+   * Copy message
+   */
+  copyMessage?(toChatId: string, fromChatId: string, messageId: string, options?: SendOptions): Promise<SendResult>;
+
+  /**
+   * Batch send messages
+   */
+  batchSend?(chatIds: string[], content: SendContent, options?: SendOptions): Promise<BatchOperationResult>;
+
+  /**
+   * Forward message (already in base adapter, but included for completeness)
+   */
+  forwardMessage?(to: string, fromChatId: string, options?: SendOptions): Promise<SendResult>;
+
+  /**
+   * Send invoice (for payments)
+   */
+  sendInvoice?(
+    target: string,
+    title: string,
+    description: string,
+    payload: string,
+    providerToken: string,
+    currency: string,
+    prices: Array<{ label: string; amount: number }>,
+    options?: SendOptions
+  ): Promise<SendResult>;
+
+  /**
+   * Answer shipping query (for payments)
+   */
+  answerShippingQuery?(shippingQueryId: string, ok: boolean, shippingOptions?: any[], errorMessage?: string): Promise<void>;
+
+  /**
+   * Answer pre-checkout query (for payments)
+   */
+  answerPreCheckoutQuery?(preCheckoutQueryId: string, ok: boolean, errorMessage?: string): Promise<void>;
+
+  /**
+   * Send game
+   */
+  sendGame?(target: string, gameShortName: string, options?: SendOptions): Promise<SendResult>;
+
+  /**
+   * Set game score
+   */
+  setGameScore?(userId: string, score: number, chatId?: string, messageId?: string, force?: boolean, disableEditMessage?: boolean): Promise<void>;
+
+  /**
+   * Get game high scores
+   */
+  getGameHighScores?(userId: string, chatId?: string, messageId?: string): Promise<Array<{ position: number; userId: string; score: number }>>;
 }
 
 /**
@@ -224,4 +443,5 @@ export type FullAdapter = Adapter &
   Partial<ConversationAdapter> &
   Partial<InteractionAdapter> &
   Partial<DiscoveryAdapter> &
-  Partial<ManagementAdapter>;
+  Partial<ManagementAdapter> &
+  Partial<AdvancedAdapter>;

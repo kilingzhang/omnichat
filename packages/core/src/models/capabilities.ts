@@ -59,6 +59,25 @@ export interface ManagementCapabilities {
 }
 
 /**
+ * Advanced capabilities
+ */
+export interface AdvancedCapabilities {
+  inline: boolean; // Inline mode
+  deepLinks: boolean; // Deep links/invite links
+  miniApps: boolean; // Mini apps/web apps
+  topics: boolean; // Forum topic management
+  batch: boolean; // Batch operations
+  payments: boolean; // Payment system
+  games: boolean; // Games
+  videoChat: boolean; // Video chat
+  stories: boolean; // Stories
+  customEmoji: boolean; // Custom emoji/sticker sets
+  webhooks: boolean; // Advanced webhook management
+  menuButton: boolean; // Menu button
+  [key: string]: boolean;
+}
+
+/**
  * Complete capabilities model
  */
 export interface Capabilities {
@@ -67,6 +86,7 @@ export interface Capabilities {
   interaction: InteractionCapabilities;
   discovery: DiscoveryCapabilities;
   management: ManagementCapabilities;
+  advanced: AdvancedCapabilities;
 }
 
 /**
@@ -78,6 +98,7 @@ export const defaultCapabilities: Capabilities = {
   interaction: { buttons: false, polls: false, reactions: false, stickers: false, effects: false },
   discovery: { history: false, search: false, pins: false, memberInfo: false, channelInfo: false },
   management: { kick: false, ban: false, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: false },
+  advanced: { inline: false, deepLinks: false, miniApps: false, topics: false, batch: false, payments: false, games: false, videoChat: false, stories: false, customEmoji: false, webhooks: false, menuButton: false },
 };
 
 /**
@@ -90,6 +111,7 @@ export function mergeCapabilities(...caps: Partial<Capabilities>[]): Capabilitie
     interaction: { ...defaultCapabilities.interaction },
     discovery: { ...defaultCapabilities.discovery },
     management: { ...defaultCapabilities.management },
+    advanced: { ...defaultCapabilities.advanced },
   };
 
   for (const cap of caps) {
@@ -98,6 +120,7 @@ export function mergeCapabilities(...caps: Partial<Capabilities>[]): Capabilitie
     if (cap.interaction) Object.assign(result.interaction, cap.interaction);
     if (cap.discovery) Object.assign(result.discovery, cap.discovery);
     if (cap.management) Object.assign(result.management, cap.management);
+    if (cap.advanced) Object.assign(result.advanced, cap.advanced);
   }
 
   return result;

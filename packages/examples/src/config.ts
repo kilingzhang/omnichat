@@ -3,14 +3,22 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 export interface BotConfig {
+  bots: BotInstanceConfig[];
+}
+
+export interface BotInstanceConfig {
+  id: string;
+  name: string;
   platform: "telegram" | "discord" | "slack" | "whatsapp" | "signal" | "imessage";
+  enabled?: boolean;
   telegram?: {
     apiToken: string;
     polling?: boolean;
   };
   discord?: {
     botToken: string;
-    intents?: number[];
+    clientId?: string;
+    intents?: string[];
   };
   slack?: {
     botToken: string;
@@ -36,7 +44,6 @@ export function loadConfig(): BotConfig {
   const parentDir = join(currentDir, "..");
   const rootDir = join(parentDir, "..");
 
-  let envPath = "";
   let envContent = "";
 
   const possiblePaths = [
@@ -48,7 +55,6 @@ export function loadConfig(): BotConfig {
   for (const path of possiblePaths) {
     try {
       envContent = readFileSync(path, "utf-8");
-      envPath = path;
       break;
     } catch (error: any) {
       // Continue to next path
@@ -75,55 +81,38 @@ export function loadConfig(): BotConfig {
     possiblePaths.forEach((p) => console.warn(`  - ${p}`));
   }
 
-  const platform = (env.PLATFORM || "telegram").toLowerCase() as any;
-  const config: BotConfig = { platform };
+  // Environment variables take precedence over .env file
+  const BOTS = process.env.BOTS || env.BOTS;
 
-  switch (platform) {
-    case "telegram":
-      config.telegram = {
-        apiToken: env.TELEGRAM_BOT_TOKEN || "",
-        polling: env.TELEGRAM_POLLING === "true" || env.TELEGRAM_POLLING === undefined,
-      };
-      break;
-
-    case "discord":
-      config.discord = {
-        botToken: env.DISCORD_BOT_TOKEN || "",
-        intents: env.DISCORD_INTENTS
-          ? env.DISCORD_INTENTS.split(",").map(Number)
-          : undefined,
-      };
-      break;
-
-    case "slack":
-      config.slack = {
-        botToken: env.SLACK_BOT_TOKEN || "",
-      };
-      break;
-
-    case "whatsapp":
-      config.whatsapp = {
-        sessionId: env.WHATSAPP_SESSION_ID || "",
-        authPath: env.WHATSAPP_AUTH_PATH,
-      };
-      break;
-
-    case "signal":
-      config.signal = {
-        phoneNumber: env.SIGNAL_PHONE_NUMBER || "",
-        profileKey: env.SIGNAL_PROFILE_KEY,
-      };
-      break;
-
-    case "imessage":
-      config.imessage = {
-        service: env.IMESSAGE_SERVICE as any || "imessage",
-      };
-      break;
-
-    default:
-      throw new Error(`Unknown platform: ${platform}`);
+  if (!BOTS) {
+    console.error("❌ BOTS environment variable is required!");
+    console.error("");
+    console.error("💡 Please set BOTS environment variable:");
+    console.error("   BOTS=[{\"id\":\"telegram\",\"platform\":\"telegram\",\"name\":\"bot\",\"telegram\":{\"apiToken\":\"YOUR_TOKEN\"}}]");
+    console.error("");
+    console.error("💡 Example with multiple bots:");
+    console.error("   BOTS=[{\"id\":\"bot1\",\"platform\":\"telegram\",\"name\":\"bot1\",\"telegram\":{\"apiToken\":\"TOKEN1\"}},{\"id\":\"bot2\",\"platform\":\"discord\",\"name\":\"bot2\",\"discord\":{\"botToken\":\"TOKEN2\",\"clientId\":\"ID\"}}]");
+    console.error("");
+    process.exit(1);
   }
 
-  return config;
+  try {
+    const botsConfig = JSON.parse(BOTS);
+
+    if (!Array.isArray(botsConfig) || botsConfig.length === 0) {
+      throw new Error("BOTS must be a non-empty array");
+    }
+
+    console.log(`📦 Loaded configuration for ${botsConfig.length} bot(s)`);
+
+    return { bots: botsConfig };
+  } catch (error) {
+    console.error("❌ Failed to parse BOTS configuration!");
+    console.error("Error:", error);
+    console.error("");
+    console.error("💡 BOTS must be a valid JSON array:");
+    console.error('   BOTS=[{"id":"mybot","platform":"telegram","name":"bot","telegram":{"apiToken":"YOUR_TOKEN"}}]');
+    console.error("");
+    process.exit(1);
+  }
 }

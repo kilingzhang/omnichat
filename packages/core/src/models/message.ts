@@ -14,7 +14,11 @@ export type MessageType =
   | "sticker"
   | "voice"
   | "location"
-  | "contact";
+  | "contact"
+  | "inline"
+  | "chosen_inline"
+  | "payment"
+  | "game";
 
 /**
  * Media types
@@ -176,3 +180,214 @@ export interface SendResult {
   chatId: string;
   timestamp: number;
 }
+
+/**
+ * Inline query result
+ */
+export interface InlineQuery {
+  id: string;
+  from: Participant;
+  query: string;
+  offset: string;
+  chatType?: "sender" | "private" | "group" | "supergroup" | "channel";
+}
+
+/**
+ * Inline result types
+ */
+export type InlineResultType = "article" | "photo" | "video" | "gif" | "mpeg4_gif";
+
+/**
+ * Inline result
+ */
+export interface InlineResult {
+  type: InlineResultType;
+  id: string;
+  title?: string;
+  messageText?: string;
+  description?: string;
+  url?: string;
+  thumbUrl?: string;
+  inputMessageContent?: {
+    messageText: string;
+    parseMode?: "markdown" | "html";
+  };
+}
+
+/**
+ * Inline query response
+ */
+export interface InlineQueryResponse {
+  results: InlineResult[];
+  nextOffset?: string;
+  switchPmText?: string;
+  switchPmParameter?: string;
+}
+
+/**
+ * Deep link parameters
+ */
+export interface DeepLinkParams {
+  start?: string; // /start parameter
+  startgroup?: string; // /startgroup parameter
+  [key: string]: string | undefined;
+}
+
+/**
+ * Invite link options
+ */
+export interface InviteLinkOptions {
+  name?: string;
+  expireDate?: number;
+  memberLimit?: number;
+  createsJoinRequest?: boolean;
+}
+
+/**
+ * Invite link result
+ */
+export interface InviteLinkResult {
+  inviteLink: string;
+  creator: Participant;
+  createsJoinRequest: boolean;
+  isPrimary: boolean;
+  isRevoked: boolean;
+  expireDate?: number;
+  memberLimit?: number;
+}
+
+/**
+ * Web app info
+ */
+export interface WebAppInfo {
+  url: string;
+}
+
+/**
+ * Menu button options
+ */
+export interface MenuButtonOptions {
+  type: "commands" | "web_app" | "default";
+  text?: string;
+  url?: string;
+}
+
+/**
+ * Forum topic options
+ */
+export interface ForumTopicOptions {
+  name: string;
+  iconColor?: number;
+  iconCustomEmojiId?: string;
+}
+
+/**
+ * Forum topic info
+ */
+export interface ForumTopicInfo {
+  messageId: number;
+  name: string;
+  iconColor: number;
+  iconCustomEmojiId?: string;
+  threadId: number;
+}
+
+/**
+ * Permissions for user restriction
+ */
+export interface ChatPermissions {
+  canSendMessages?: boolean;
+  canSendMediaMessages?: boolean;
+  canSendPolls?: boolean;
+  canSendOtherMessages?: boolean;
+  canAddWebPagePreviews?: boolean;
+  canChangeInfo?: boolean;
+  canInviteUsers?: boolean;
+  canPinMessages?: boolean;
+  canManageTopics?: boolean;
+}
+
+/**
+ * Administrator rights
+ */
+export interface AdministratorRights {
+  isAnonymous?: boolean;
+  canManageChat?: boolean;
+  canDeleteMessages?: boolean;
+  canManageVideoChats?: boolean;
+  canRestrictMembers?: boolean;
+  canPromoteMembers?: boolean;
+  canChangeInfo?: boolean;
+  canInviteUsers?: boolean;
+  canPostStories?: boolean;
+  canEditStories?: boolean;
+  canDeleteStories?: boolean;
+  canManageTopics?: boolean;
+}
+
+/**
+ * Webhook info
+ */
+export interface WebhookInfo {
+  url: string;
+  hasCustomCertificate: boolean;
+  pendingUpdateCount: number;
+  ipAddress?: string;
+  lastErrorDate?: number;
+  lastErrorMessage?: string;
+  lastSynchronizationErrorDate?: number;
+  maxConnections?: number;
+  allowedUpdates?: string[];
+}
+
+/**
+ * Batch operation result
+ */
+export interface BatchOperationResult {
+  successful: number;
+  failed: number;
+  errors: Array<{ chatId: string; error: string }>;
+}
+
+/**
+ * Poll input for creating polls
+ */
+export interface PollInput {
+  question: string;
+  options: string[];
+  multi?: boolean;
+  correctOptionId?: number;
+  explanation?: string;
+  explanationParseMode?: "markdown" | "html";
+  openPeriod?: number;
+  closeDate?: number;
+  isClosed?: boolean;
+}
+
+/**
+ * Poll result
+ */
+export interface PollResult {
+  pollId: string;
+  messageId: string;
+  channel: string;
+  options?: Array<{ text: string; voterCount: number }>;
+  totalVoterCount?: number;
+  isClosed?: boolean;
+}
+
+/**
+ * Chat action types
+ */
+export type ChatAction =
+  | "typing"
+  | "upload_photo"
+  | "record_video"
+  | "upload_video"
+  | "record_voice"
+  | "upload_voice"
+  | "upload_document"
+  | "choose_sticker"
+  | "find_location"
+  | "record_video_note"
+  | "upload_video_note";
