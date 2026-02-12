@@ -95,6 +95,7 @@ export type {
   Storage,
   StorageConfig,
   StorageMetadata,
+  StorageResult,
 } from "./storage/storage.js";
 export { StorageManager, LocalFileStorage } from "./storage/index.js";
 

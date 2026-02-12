@@ -165,6 +165,7 @@ export class TelegramAdapter implements FullAdapter {
       interaction: { buttons: true, polls: true, reactions: true, stickers: true, effects: true },
       discovery: { history: false, search: false, pins: false, memberInfo: true, channelInfo: true },
       management: { kick: true, ban: true, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: true },
+      advanced: { inline: true, deepLinks: true, miniApps: false, topics: true, batch: false, payments: false, games: true, videoChat: false, stories: false, customEmoji: true, webhooks: true, menuButton: true },
     };
   }
 
@@ -602,6 +603,79 @@ export class TelegramAdapter implements FullAdapter {
       await this.bot.sendChatAction(target, action);
     } catch (error) {
       console.error(`Failed to send chat action ${action} to ${target}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send message with custom keyboard (ReplyKeyboardMarkup)
+   */
+  async sendWithKeyboard(
+    target: string,
+    text: string,
+    options: {
+      keyboard: Array<Array<{ text: string; callback_data?: string }>>;
+      resize?: boolean;
+      oneTime?: boolean;
+      selective?: boolean;
+    }
+  ): Promise<SendResult> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    const telegramTarget = publicIdToTelegramId(target);
+
+    try {
+      const result = await this.bot.sendMessage(telegramTarget, text, {
+        reply_markup: {
+          keyboard: options.keyboard.map((row) =>
+            row.map((btn) => ({ text: btn.text }))
+          ),
+          resize_keyboard: options.resize ?? true,
+          one_time_keyboard: options.oneTime ?? false,
+          selective: options.selective ?? false,
+        },
+      });
+
+      return {
+        platform: "telegram",
+        messageId: `${result.chat.id}:${result.message_id}`,
+        chatId: String(result.chat.id),
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error(`Failed to send keyboard to ${target}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Hide custom keyboard
+   */
+  async hideKeyboard(target: string, text?: string): Promise<SendResult> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    const telegramTarget = publicIdToTelegramId(target);
+
+    try {
+      const result = await this.bot.sendMessage(telegramTarget, text || "键盘已隐藏", {
+        reply_markup: {
+          remove_keyboard: true,
+          selective: false,
+        },
+      });
+
+      return {
+        platform: "telegram",
+        messageId: `${result.chat.id}:${result.message_id}`,
+        chatId: String(result.chat.id),
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error(`Failed to hide keyboard for ${target}:`, error);
       throw error;
     }
   }
@@ -1503,22 +1577,18 @@ export class TelegramAdapter implements FullAdapter {
   /**
    * Create a forum topic
    * @param chatId - Chat ID or username (must be a supergroup)
-   * @param name - Topic name (1-128 characters)
-   * @param options - Optional parameters
+   * @param options - Topic options including name
    * @returns Promise resolving to created topic info
    */
   async createForumTopic(
     chatId: string,
-    name: string,
-    options?: {
-      iconColor?: number; // RGB color
-      iconCustomEmojiId?: string; // Custom emoji ID
-    }
+    options: { name: string; iconColor?: number; iconCustomEmojiId?: string }
   ): Promise<{
-    messageThreadId: number;
+    messageId: number;
     name: string;
     iconColor: number;
     iconCustomEmojiId?: string;
+    threadId: number;
   }> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
@@ -1529,13 +1599,14 @@ export class TelegramAdapter implements FullAdapter {
       if (options?.iconColor !== undefined) topicOptions.icon_color = options.iconColor;
       if (options?.iconCustomEmojiId !== undefined) topicOptions.icon_custom_emoji_id = options.iconCustomEmojiId;
 
-      const topic = await this.bot.createForumTopic(chatId, name, topicOptions);
+      const topic = await this.bot.createForumTopic(chatId, options.name, topicOptions);
 
       return {
-        messageThreadId: topic.message_thread_id,
+        messageId: topic.message_id || topic.message_thread_id,
         name: topic.name,
-        iconColor: topic.icon_color,
+        iconColor: topic.icon_color || 0,
         iconCustomEmojiId: topic.icon_custom_emoji_id,
+        threadId: topic.message_thread_id,
       };
     } catch (error) {
       console.error(`Failed to create forum topic in ${chatId}:`, error);
@@ -1546,29 +1617,27 @@ export class TelegramAdapter implements FullAdapter {
   /**
    * Edit a forum topic
    * @param chatId - Chat ID or username
-   * @param messageThreadId - Forum topic identifier
-   * @param options - Optional parameters
+   * @param topicId - Forum topic identifier
+   * @param name - New topic name
+   * @param iconCustomEmojiId - Optional custom emoji ID
    */
   async editForumTopic(
     chatId: string,
-    messageThreadId: number,
-    options?: {
-      name?: string;
-      iconCustomEmojiId?: string;
-    }
+    topicId: number,
+    name: string,
+    iconCustomEmojiId?: string
   ): Promise<void> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
     }
 
     try {
-      const topicOptions: any = {};
-      if (options?.name !== undefined) topicOptions.name = options.name;
-      if (options?.iconCustomEmojiId !== undefined) topicOptions.icon_custom_emoji_id = options.iconCustomEmojiId;
+      const topicOptions: any = { name };
+      if (iconCustomEmojiId !== undefined) topicOptions.icon_custom_emoji_id = iconCustomEmojiId;
 
-      await this.bot.editForumTopic(chatId, messageThreadId, topicOptions);
+      await this.bot.editForumTopic(chatId, topicId, topicOptions);
     } catch (error) {
-      console.error(`Failed to edit forum topic ${messageThreadId} in ${chatId}:`, error);
+      console.error(`Failed to edit forum topic ${topicId} in ${chatId}:`, error);
       throw error;
     }
   }

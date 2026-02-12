@@ -61,7 +61,7 @@ sdk.on(async (message) => {
 | Telegram | `@omnichat/telegram` | ✅ Production Ready | Full feature support |
 | Discord | `@omnichat/discord` | ✅ Production Ready | Full feature support |
 | Slack | `@omnichat/slack` | ✅ Production Ready | Full feature support |
-| WhatsApp | `@omnichat/whatsapp` | ⚠️ Partial | Needs improvements - see [ADAPTER_STATUS.md](./ADAPTER_STATUS.md) |
+| WhatsApp | `@omnichat/whatsapp` | ⚠️ Partial | Needs improvements - see [ADAPTER_STATUS.md](./docs/ADAPTER_STATUS.md) |
 | Signal | `@omnichat/signal` | 🔴 Stub | Requires external setup |
 | iMessage | `@omnichat/imessage` | 🔴 Stub | macOS only, send-only |
 
@@ -297,24 +297,36 @@ cd packages/examples
 pnpm dev
 ```
 
+## 📖 Documentation
+
+- [Quick Start](./docs/QUICK_START.md) - Get started quickly
+- [Contributing](./docs/CONTRIBUTING.md) - Contribution guidelines
+- [Adapter Status](./docs/ADAPTER_STATUS.md) - Platform support status
+- [Security](./docs/SECURITY.md) - Security guidelines
+- [Changelog](./docs/CHANGELOG.md) - Version history
+
 ## 📂 Project Structure
 
 ```
-im-sdk/
+omnichat/
 ├── packages/
 │   ├── core/              # Core SDK
 │   ├── adapters/          # Platform adapters
 │   │   ├── telegram/
 │   │   ├── discord/
+│   │   ├── slack/
 │   │   └── ...
 │   └── examples/          # Usage examples
+├── docs/                  # Documentation
 ├── package.json
 └── pnpm-workspace.yaml
 ```
 
 ## 🤝 Contributing
 
-Contributions welcome! To add a new platform:
+See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for details.
+
+To add a new platform:
 
 1. Create a new adapter package under `packages/adapters/`
 2. Implement the `FullAdapter` interface

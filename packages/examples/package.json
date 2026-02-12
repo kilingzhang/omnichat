@@ -1,16 +1,10 @@
 {
   "name": "@omnichat/example",
   "version": "0.1.0",
-  "description": "Example usage of Universal IM SDK",
+  "description": "Example usage of Omnichat SDK - Multi-platform Bot Manager",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
+  "main": "./dist/bots/group-assistant/index.js",
+  "types": "./dist/bots/group-assistant/index.d.ts",
   "scripts": {
     "build": "tsc",
     "start": "node dist/bots/group-assistant/index.js",
