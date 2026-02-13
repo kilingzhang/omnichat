@@ -216,6 +216,7 @@ export interface DiscordInteraction {
   member?: any;
   data?: any;
   message?: any;
+  raw?: any; // Raw discord.js interaction object
 }
 
 /**
@@ -282,19 +283,36 @@ export class DiscordAdapter implements FullAdapter {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: true, edit: true, delete: true, threads: true, quote: false },
       interaction: { buttons: true, polls: true, reactions: true, stickers: false, effects: false },
-      discovery: { history: true, search: false, pins: true, memberInfo: true, channelInfo: true },
+      discovery: {
+        history: true,
+        search: false,
+        pins: true,
+        pinMessage: true,
+        unpinMessage: true,
+        memberInfo: true,
+        memberCount: true,
+        administrators: true,
+        channelInfo: true,
+      },
       management: {
         kick: true,
         ban: true,
+        mute: true,
         timeout: true,
+        unban: true,
         channelCreate: true,
         channelEdit: true,
         channelDelete: true,
         permissions: true,
+        setChatTitle: true,
+        setChatDescription: true,
       },
       advanced: {
         inline: false,
         deepLinks: false,
+        createInvite: true,
+        getInvites: true,
+        revokeInvite: true,
         miniApps: false,
         topics: false,
         batch: false,
@@ -431,21 +449,43 @@ export class DiscordAdapter implements FullAdapter {
         payload.embeds = [discordContent.embed];
       }
 
-      // Handle Discord buttons/action rows/select menus
-      if (discordContent.components) {
+      // Handle unified buttons format (cross-platform)
+      // Format: buttons: [[{ text: "Label", data: "callback_data" }, ...], ...]
+      if (discordContent.buttons && Array.isArray(discordContent.buttons)) {
+        const Discord: any = this._testDiscordModule || await import("discord.js");
+        payload.components = discordContent.buttons.map((row: any[]) => {
+          // Build all buttons for this row first
+          const buttons = row.map((btn: any) => {
+            const button = new Discord.ButtonBuilder()
+              .setLabel(btn.text || btn.label || '')
+              .setCustomId(btn.data || btn.customId || `button_${Date.now()}`)
+              .setStyle(btn.style !== undefined ? btn.style : Discord.ButtonStyle.Primary);
+
+            if (btn.emoji) {
+              button.setEmoji(btn.emoji);
+            }
+
+            return button;
+          });
+
+          // Create ActionRow and add all buttons at once (per Discord.js docs pattern)
+          const actionRow = new Discord.ActionRowBuilder().addComponents(...buttons);
+          return actionRow;
+        });
+      }
+
+      // Handle Discord buttons/action rows/select menus (native format)
+      if (discordContent.components && !payload.components) {
         const Discord: any = this._testDiscordModule || await import("discord.js");
         payload.components = discordContent.components.map((row: any) => {
-          const actionRow = new Discord.ActionRowBuilder();
-
           if (row.components && Array.isArray(row.components)) {
-            row.components.forEach((comp: any) => {
+            const components = row.components.map((comp: any) => {
               if (comp.type === 2) {
                 // Button - style should be ButtonStyle enum
-                const button = new Discord.ButtonBuilder()
+                return new Discord.ButtonBuilder()
                   .setLabel(comp.label || '')
                   .setStyle(comp.style !== undefined ? comp.style : Discord.ButtonStyle.Primary)
                   .setCustomId(comp.customId || `button_${Date.now()}`);
-                actionRow.addComponents(button);
               } else if (comp.type === 3) {
                 // String Select Menu
                 const selectMenu = new Discord.StringSelectMenuBuilder()
@@ -460,12 +500,47 @@ export class DiscordAdapter implements FullAdapter {
                   );
                   selectMenu.addOptions(...options);
                 }
-                actionRow.addComponents(selectMenu);
+                return selectMenu;
+              } else if (comp.type === 5) {
+                // User Select Menu
+                return new Discord.UserSelectMenuBuilder()
+                  .setCustomId(comp.custom_id || comp.customId || `user_select_${Date.now()}`)
+                  .setPlaceholder(comp.placeholder || 'Select a user')
+                  .setMinValues(comp.min_values ?? comp.minValues ?? 1)
+                  .setMaxValues(comp.max_values ?? comp.maxValues ?? 1)
+                  .setDisabled(comp.disabled ?? false);
+              } else if (comp.type === 6) {
+                // Role Select Menu
+                return new Discord.RoleSelectMenuBuilder()
+                  .setCustomId(comp.custom_id || comp.customId || `role_select_${Date.now()}`)
+                  .setPlaceholder(comp.placeholder || 'Select a role')
+                  .setMinValues(comp.min_values ?? comp.minValues ?? 1)
+                  .setMaxValues(comp.max_values ?? comp.maxValues ?? 1)
+                  .setDisabled(comp.disabled ?? false);
+              } else if (comp.type === 7) {
+                // Channel Select Menu
+                return new Discord.ChannelSelectMenuBuilder()
+                  .setCustomId(comp.custom_id || comp.customId || `channel_select_${Date.now()}`)
+                  .setPlaceholder(comp.placeholder || 'Select a channel')
+                  .setMinValues(comp.min_values ?? comp.minValues ?? 1)
+                  .setMaxValues(comp.max_values ?? comp.maxValues ?? 1)
+                  .setDisabled(comp.disabled ?? false);
+              } else if (comp.type === 8) {
+                // Mentionable Select Menu
+                return new Discord.MentionableSelectMenuBuilder()
+                  .setCustomId(comp.custom_id || comp.customId || `mentionable_select_${Date.now()}`)
+                  .setPlaceholder(comp.placeholder || 'Select a mentionable')
+                  .setMinValues(comp.min_values ?? comp.minValues ?? 1)
+                  .setMaxValues(comp.max_values ?? comp.maxValues ?? 1)
+                  .setDisabled(comp.disabled ?? false);
               }
-            });
+              return null;
+            }).filter(Boolean);
+
+            return new Discord.ActionRowBuilder().addComponents(...components);
           }
 
-          return actionRow;
+          return new Discord.ActionRowBuilder();
         });
       }
 
@@ -1047,15 +1122,22 @@ export class DiscordAdapter implements FullAdapter {
     try {
       const Discord = await import("discord.js");
 
-      const commandData = {
+      // Context menu commands (UserCommand, MessageCommand) cannot have descriptions
+      const isContextMenu = command.type === 'UserCommand' || command.type === 'MessageCommand';
+
+      const commandData: any = {
         name: command.name,
-        description: command.description,
         type: this.getCommandType(command.type),
-        options: command.options?.map(opt => this.mapCommandOption(opt, Discord)),
         default_member_permissions: command.defaultPermission !== undefined
           ? (command.defaultPermission ? '1 << 0' : '0')
           : undefined,
       };
+
+      // Only include description for slash commands (ChatInput)
+      if (!isContextMenu) {
+        commandData.description = command.description || '';
+        commandData.options = command.options?.map(opt => this.mapCommandOption(opt, Discord));
+      }
 
       if (command.guildId) {
         // Register guild-specific command
@@ -1260,11 +1342,14 @@ export class DiscordAdapter implements FullAdapter {
 
   /**
    * Show a modal to a user
+   * Supports two call patterns:
+   * 1. showModal(interaction, modal) - Pass raw discord.js interaction
+   * 2. showModal(interactionId, token, modal) - Pass id and token separately
    */
   async showModal(
-    interactionId: string,
-    token: string,
-    modal: DiscordModal
+    interactionOrId: any,
+    tokenOrModal: string | DiscordModal,
+    modalOrUndefined?: DiscordModal
   ): Promise<void> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
@@ -1273,7 +1358,67 @@ export class DiscordAdapter implements FullAdapter {
     const Discord = await import("discord.js");
 
     try {
-      const components = modal.components.map((input, index) => ({
+      let actualModal: DiscordModal;
+      let token: string;
+      let interaction: any = null;
+
+      // Detect which call pattern is being used
+      // Check if second param is a modal object (has customId) or a string (token)
+      const isSecondParamModal = typeof tokenOrModal === 'object' && tokenOrModal !== null && 'customId' in tokenOrModal;
+
+      if (isSecondParamModal) {
+        // New pattern: showModal(interaction, modal)
+        interaction = interactionOrId;
+        actualModal = tokenOrModal as DiscordModal;
+        token = interaction.token;
+      } else if (typeof tokenOrModal === 'string' && modalOrUndefined) {
+        // Old pattern: showModal(interactionId, token, modal)
+        token = tokenOrModal;
+        actualModal = modalOrUndefined;
+      } else {
+        throw new Error('showModal: Invalid parameters - could not determine modal configuration');
+      }
+
+      // Validate modal has required properties
+      if (!actualModal.components || !Array.isArray(actualModal.components)) {
+        throw new Error('showModal: modal.components is required and must be an array');
+      }
+
+      // Use discord.js native method if we have an interaction object
+      if (interaction && interaction.showModal && typeof interaction.showModal === 'function') {
+        const modalBuilder = new Discord.ModalBuilder()
+          .setCustomId(actualModal.customId || `modal_${Date.now()}`)
+          .setTitle(actualModal.title || 'Form');
+
+        for (const input of actualModal.components) {
+          const textInput = new Discord.TextInputBuilder()
+            .setCustomId(input.customId)
+            .setLabel(input.label)
+            .setStyle(input.style === 'Short' ? Discord.TextInputStyle.Short : Discord.TextInputStyle.Paragraph)
+            .setPlaceholder(input.placeholder || '')
+            .setRequired(input.required ?? false);
+
+          if (input.minLength !== undefined) {
+            textInput.setMinLength(input.minLength);
+          }
+          if (input.maxLength !== undefined) {
+            textInput.setMaxLength(input.maxLength);
+          }
+          if (input.value !== undefined) {
+            textInput.setValue(input.value);
+          }
+
+          const actionRow = new Discord.ActionRowBuilder<typeof textInput>().addComponents(textInput);
+          modalBuilder.addComponents(actionRow);
+        }
+
+        await interaction.showModal(modalBuilder);
+        this.logger.info(`Modal shown: ${actualModal.title}`);
+        return;
+      }
+
+      // Fallback to REST API
+      const components = actualModal.components.map((input) => ({
         type: 1, // ACTION_ROW
         components: [{
           type: 4, // TEXT_INPUT
@@ -1294,15 +1439,15 @@ export class DiscordAdapter implements FullAdapter {
           body: {
             type: 9, // MODAL
             data: {
-              custom_id: modal.customId,
-              title: modal.title,
+              custom_id: actualModal.customId,
+              title: actualModal.title,
               components,
             },
           },
         }
       );
 
-      this.logger.info(`Modal shown: ${modal.title}`);
+      this.logger.info(`Modal shown: ${actualModal.title}`);
     } catch (error) {
       this.logger.error("Failed to show modal", error);
       throw error;
@@ -1315,19 +1460,46 @@ export class DiscordAdapter implements FullAdapter {
 
   /**
    * Send a select menu
+   * Supports two call patterns:
+   * 1. sendSelectMenu(target, selectMenu, text, options?) - selectMenu before text
+   * 2. sendSelectMenu(target, text, selectMenu, options?) - text before selectMenu (legacy)
    */
   async sendSelectMenu(
     target: string,
-    text: string,
-    selectMenu: DiscordSelectMenu,
+    textOrSelectMenu: string | DiscordSelectMenu,
+    selectMenuOrText: string | DiscordSelectMenu,
     options?: SendOptions
   ): Promise<SendResult> {
+    // Detect which call pattern is being used by checking if second param has customId
+    let text: string;
+    let selectMenu: DiscordSelectMenu;
+
+    const isFirstParamMenu = typeof textOrSelectMenu === 'object' && textOrSelectMenu !== null && 'customId' in textOrSelectMenu;
+    const isSecondParamMenu = typeof selectMenuOrText === 'object' && selectMenuOrText !== null && 'customId' in selectMenuOrText;
+
+    if (isFirstParamMenu) {
+      // New pattern: sendSelectMenu(target, selectMenu, text, options)
+      selectMenu = textOrSelectMenu as DiscordSelectMenu;
+      text = selectMenuOrText as string;
+    } else if (isSecondParamMenu) {
+      // Legacy pattern: sendSelectMenu(target, text, selectMenu, options)
+      text = textOrSelectMenu as string;
+      selectMenu = selectMenuOrText as DiscordSelectMenu;
+    } else {
+      throw new Error('sendSelectMenu: Could not determine which parameter is the select menu');
+    }
+
+    // Validate selectMenu has required properties
+    if (!selectMenu.options || !Array.isArray(selectMenu.options)) {
+      throw new Error('sendSelectMenu: selectMenu.options is required and must be an array');
+    }
+
     const actionRow = {
       type: 1, // ACTION_ROW
       components: [{
         type: 3, // STRING_SELECT
-        custom_id: selectMenu.customId,
-        placeholder: selectMenu.placeholder,
+        custom_id: selectMenu.customId || `select_${Date.now()}`,
+        placeholder: selectMenu.placeholder || 'Select an option',
         min_values: selectMenu.minValues ?? 1,
         max_values: selectMenu.maxValues ?? 1,
         disabled: selectMenu.disabled ?? false,
@@ -1348,13 +1520,35 @@ export class DiscordAdapter implements FullAdapter {
 
   /**
    * Send an entity select menu (User/Role/Channel/Mentionable)
+   * Supports two call patterns:
+   * 1. sendEntitySelectMenu(target, selectMenu, text, options?) - selectMenu before text
+   * 2. sendEntitySelectMenu(target, text, selectMenu, options?) - text before selectMenu (legacy)
    */
   async sendEntitySelectMenu(
     target: string,
-    text: string,
-    selectMenu: DiscordEntitySelectMenu,
+    textOrSelectMenu: string | DiscordEntitySelectMenu,
+    selectMenuOrText: string | DiscordEntitySelectMenu,
     options?: SendOptions
   ): Promise<SendResult> {
+    // Detect which call pattern is being used by checking if second param has customId
+    let text: string;
+    let selectMenu: DiscordEntitySelectMenu;
+
+    const isFirstParamMenu = typeof textOrSelectMenu === 'object' && textOrSelectMenu !== null && 'customId' in textOrSelectMenu;
+    const isSecondParamMenu = typeof selectMenuOrText === 'object' && selectMenuOrText !== null && 'customId' in selectMenuOrText;
+
+    if (isFirstParamMenu) {
+      // New pattern: sendEntitySelectMenu(target, selectMenu, text, options)
+      selectMenu = textOrSelectMenu as DiscordEntitySelectMenu;
+      text = selectMenuOrText as string;
+    } else if (isSecondParamMenu) {
+      // Legacy pattern: sendEntitySelectMenu(target, text, selectMenu, options)
+      text = textOrSelectMenu as string;
+      selectMenu = selectMenuOrText as DiscordEntitySelectMenu;
+    } else {
+      throw new Error('sendEntitySelectMenu: Could not determine which parameter is the select menu');
+    }
+
     const typeMap: Record<string, number> = {
       'User': 5,
       'Role': 6,
@@ -1365,9 +1559,9 @@ export class DiscordAdapter implements FullAdapter {
     const actionRow = {
       type: 1, // ACTION_ROW
       components: [{
-        type: typeMap[selectMenu.type],
-        custom_id: selectMenu.customId,
-        placeholder: selectMenu.placeholder,
+        type: typeMap[selectMenu.type] || 5,
+        custom_id: selectMenu.customId || `entity_select_${Date.now()}`,
+        placeholder: selectMenu.placeholder || 'Select an option',
         min_values: selectMenu.minValues ?? 1,
         max_values: selectMenu.maxValues ?? 1,
         disabled: selectMenu.disabled ?? false,
@@ -2286,6 +2480,7 @@ export class DiscordAdapter implements FullAdapter {
         member: interaction.member,
         data: interaction.data,
         message: interaction.message,
+        raw: interaction, // Include raw interaction for access to discord.js methods
       };
       this.interactionCache.set(interaction.id, interactionData);
 
@@ -2544,5 +2739,486 @@ export class DiscordAdapter implements FullAdapter {
       timestamp: Date.now(),
       raw: reaction,
     };
+  }
+
+  // ============================================================================
+  // Unified API Methods (Standardized across platforms)
+  // Note: These override/extend the native Discord methods with unified signatures
+  // ============================================================================
+
+  /**
+   * Create invite with unified options
+   */
+  async createInvite(
+    channelId: string,
+    options?: import("@omnichat/core").UnifiedInviteOptions
+  ): Promise<import("@omnichat/core").UnifiedInviteResult> {
+    const discordOptions: {
+      maxAge?: number;
+      maxUses?: number;
+      temporary?: boolean;
+      unique?: boolean;
+      reason?: string;
+    } = {};
+
+    if (options?.maxUses !== undefined) discordOptions.maxUses = options.maxUses;
+    if (options?.expiresInSeconds !== undefined) discordOptions.maxAge = options.expiresInSeconds;
+    if (options?.reason) discordOptions.reason = options.reason;
+    if (options?.discord?.temporary !== undefined) discordOptions.temporary = options.discord.temporary;
+    if (options?.discord?.unique !== undefined) discordOptions.unique = options.discord.unique;
+
+    const result = await this._createDiscordInvite(channelId, discordOptions);
+
+    return {
+      url: result.url,
+      code: result.code,
+      maxUses: discordOptions.maxUses,
+      raw: result,
+    };
+  }
+
+  // Native Discord invite method (renamed)
+  private async _createDiscordInvite(
+    channelId: string,
+    options?: {
+      maxAge?: number;
+      maxUses?: number;
+      temporary?: boolean;
+      unique?: boolean;
+      reason?: string;
+    }
+  ): Promise<{ code: string; url: string }> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    this.logger.debug(`Creating invite for channel ${channelId}`);
+
+    const channel: any = await this.client.channels.fetch(channelId);
+    const invite = await channel.createInvite({
+      maxAge: options?.maxAge || 86400,
+      maxUses: options?.maxUses,
+      temporary: options?.temporary || false,
+      unique: options?.unique,
+      reason: options?.reason,
+    });
+
+    this.logger.info(`Invite created: ${invite.code}`);
+
+    return {
+      code: invite.code,
+      url: `https://discord.gg/${invite.code}`,
+    };
+  }
+
+  /**
+   * Get invites list
+   */
+  async getInvites(
+    channelId: string
+  ): Promise<import("@omnichat/core").UnifiedInviteResult[]> {
+    const invites = await this._getDiscordInvites(channelId);
+    return invites.map((invite) => ({
+      url: invite.url,
+      code: invite.code,
+      maxUses: invite.maxUses,
+      useCount: invite.uses,
+      expiresAt: invite.expiresAt ? Math.floor(invite.expiresAt.getTime() / 1000) : undefined,
+    }));
+  }
+
+  // Native Discord get invites method (renamed)
+  private async _getDiscordInvites(channelId: string): Promise<Array<{
+    code: string;
+    url: string;
+    maxUses?: number;
+    uses: number;
+    expiresAt?: Date;
+  }>> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const channel: any = await this.client.channels.fetch(channelId);
+    const invites = await channel.invites.fetch();
+
+    return invites.map((invite: any) => ({
+      code: invite.code,
+      url: `https://discord.gg/${invite.code}`,
+      maxUses: invite.maxUses,
+      uses: invite.uses,
+      expiresAt: invite.expiresAt,
+    }));
+  }
+
+  /**
+   * Revoke invite
+   */
+  async revokeInvite(
+    channelId: string,
+    inviteCode: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this._deleteDiscordInvite(channelId, inviteCode);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Native Discord delete invite method (renamed)
+  private async _deleteDiscordInvite(channelId: string, inviteCode: string, reason?: string): Promise<void> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    this.logger.debug(`Deleting invite ${inviteCode} from channel ${channelId}`);
+
+    const invite = await this.client.fetchInvite(inviteCode);
+    await invite.delete(reason);
+    this.logger.info(`Invite ${inviteCode} deleted`);
+  }
+
+  /**
+   * Export invite (gets or creates default invite)
+   */
+  async exportInvite(channelId: string): Promise<string> {
+    const invites = await this.getInvites(channelId);
+    if (invites.length > 0) {
+      return invites[0].url;
+    }
+    const result = await this.createInvite(channelId);
+    return result.url;
+  }
+
+  /**
+   * Pin message
+   */
+  async pinMessage(
+    channelId: string,
+    messageId: string,
+    options?: import("@omnichat/core").UnifiedPinOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      if (!this.client) {
+        throw new Error("Discord client not initialized");
+      }
+
+      const channel: any = await this.client.channels.fetch(channelId);
+      const message = await channel.messages.fetch(messageId);
+      await message.pin(options?.discord?.auditLogReason || options?.reason);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Unpin message
+   */
+  async unpinMessage(
+    channelId: string,
+    messageId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      if (!this.client) {
+        throw new Error("Discord client not initialized");
+      }
+
+      const channel: any = await this.client.channels.fetch(channelId);
+      const message = await channel.messages.fetch(messageId);
+      await message.unpin();
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get member info
+   */
+  async getMemberInfo(
+    guildId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedMemberInfo> {
+    const member = await this._getDiscordMember(guildId, userId);
+    return {
+      id: member.user.id,
+      name: member.nickname || member.user.username,
+      username: member.user.username,
+      roles: member.roles,
+      joinedAt: member.joinedAt ? Math.floor(member.joinedAt.getTime() / 1000) : undefined,
+      raw: member,
+    };
+  }
+
+  // Native Discord get member method (renamed)
+  private async _getDiscordMember(guildId: string, userId: string): Promise<{
+    user: { id: string; username: string; discriminator: string };
+    roles: string[];
+    joinedAt: Date;
+    nickname?: string;
+  }> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const guild = await this.client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+
+    return {
+      user: {
+        id: member.user.id,
+        username: member.user.username,
+        discriminator: member.user.discriminator,
+      },
+      roles: [...member.roles.cache.keys()],
+      joinedAt: member.joinedAt!,
+      nickname: member.nickname || undefined,
+    };
+  }
+
+  /**
+   * Get member count
+   */
+  async getMemberCount(guildId: string): Promise<number> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const guild = await this.client.guilds.fetch(guildId);
+    return guild.approximateMemberCount || guild.memberCount || 0;
+  }
+
+  /**
+   * Get administrators
+   */
+  async getAdministrators(
+    guildId: string
+  ): Promise<import("@omnichat/core").UnifiedMemberInfo[]> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const guild = await this.client.guilds.fetch(guildId);
+    await guild.members.fetch();
+    const admins = guild.members.cache.filter((member: any) =>
+      member.permissions.has("Administrator") || member.permissions.has("ManageGuild")
+    );
+
+    return admins.map((member: any) => ({
+      id: member.user.id,
+      name: member.displayName || member.user.username,
+      username: member.user.username,
+      roles: [...member.roles.cache.keys()],
+      isAdmin: true,
+      isOwner: member.user.id === guild.ownerId,
+      raw: member,
+    }));
+  }
+
+  /**
+   * Kick user
+   */
+  async kick(
+    guildId: string,
+    userId: string,
+    options?: import("@omnichat/core").UnifiedModerationOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this._kickDiscordUser(guildId, userId, options?.reason);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Native Discord kick method (renamed)
+  private async _kickDiscordUser(guildId: string, userId: string, reason?: string): Promise<void> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    this.logger.debug(`Kicking user ${userId} from guild ${guildId}`);
+
+    const guild = await this.client.guilds.fetch(guildId);
+    await guild.members.kick(userId, reason);
+    this.logger.info(`User ${userId} kicked from guild ${guildId}`);
+  }
+
+  /**
+   * Ban user
+   */
+  async ban(
+    guildId: string,
+    userId: string,
+    options?: import("@omnichat/core").UnifiedModerationOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      const duration = options?.durationSeconds ? options.durationSeconds * 1000 : undefined;
+      await this._banDiscordUser(guildId, userId, options?.reason, duration);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Native Discord ban method (renamed)
+  private async _banDiscordUser(guildId: string, userId: string, reason?: string, duration?: number): Promise<void> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    this.logger.debug(`Banning user ${userId} from guild ${guildId}`);
+
+    const guild = await this.client.guilds.fetch(guildId);
+    const banOptions: any = { reason };
+
+    if (duration) {
+      banOptions.expirationDate = Date.now() + duration;
+    }
+
+    await guild.bans.create(userId, banOptions);
+    this.logger.info(`User ${userId} banned from guild ${guildId}`);
+  }
+
+  /**
+   * Unban user
+   */
+  async unban(
+    guildId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      if (!this.client) {
+        throw new Error("Discord client not initialized");
+      }
+
+      const guild = await this.client.guilds.fetch(guildId);
+      await guild.bans.remove(userId);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Mute user (Discord uses timeout)
+   */
+  async mute(
+    guildId: string,
+    userId: string,
+    options: import("@omnichat/core").UnifiedMuteOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      const durationMs = options.durationSeconds * 1000;
+      await this._timeoutDiscordUser(guildId, userId, durationMs, options.reason);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Native Discord timeout method (renamed)
+  private async _timeoutDiscordUser(guildId: string, userId: string, duration: number, reason?: string): Promise<void> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    this.logger.debug(`Timing out user ${userId} in guild ${guildId} for ${duration}ms`);
+
+    const guild = await this.client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+
+    const maxDuration = 28 * 24 * 60 * 60 * 1000;
+    const actualDuration = Math.min(duration, maxDuration);
+
+    await member.timeout(actualDuration, reason);
+    this.logger.info(`User ${userId} timed out in guild ${guildId} for ${actualDuration}ms`);
+  }
+
+  /**
+   * Unmute user
+   */
+  async unmute(
+    guildId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      if (!this.client) {
+        throw new Error("Discord client not initialized");
+      }
+
+      const guild = await this.client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      await member.timeout(null);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Set chat title
+   */
+  async setTitle(
+    channelId: string,
+    title: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.editChannel(channelId, { name: title });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Set chat description
+   */
+  async setDescription(
+    channelId: string,
+    description: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.editChannel(channelId, { topic: description || undefined });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Create DM channel
+   */
+  async createDMChannel(userId: string): Promise<string> {
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const user = await this.client.users.fetch(userId);
+    const dmChannel = await user.createDM();
+    return dmChannel.id;
+  }
+
+  /**
+   * Close DM channel
+   */
+  async closeDMChannel(
+    channelId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      if (!this.client) {
+        throw new Error("Discord client not initialized");
+      }
+
+      const channel = await this.client.channels.fetch(channelId);
+      if (channel && channel.isDMBased()) {
+        await channel.delete();
+      }
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   }
 }

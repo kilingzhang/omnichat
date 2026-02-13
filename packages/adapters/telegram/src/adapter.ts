@@ -29,104 +29,28 @@ if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
   };
 }
 
-// ============================================================================
-// Chat ID Conversion - 统一使用正数对外，内部转换为负数
-// ============================================================================
-
-/**
- * Telegram 的 Chat ID 规则：
- * - 正数: 私聊（个人用户）
- * - 负数: 群组/频道/超级群组
- *
- * 为了用户友好，我们统一对外使用正数。
- * 为了避免 ID 冲突，我们在高比特位存储符号信息：
- * - 私聊 ID: 保持原值（正数）
- * - 群组 ID: 将负数转为正数，但在高位设置标记位
- *
- * 编码方案：
- * - 私聊: 0x4000000000000000 + id（设置第62位为1）
- * - 群组: abs(id)（直接使用绝对值）
- *
- * 这样可以完全避免冲突，因为：
- * - 私聊 ID 会有 0x4 前缀（大于 2^62）
- * - 群组 ID 没有前缀（绝对值）
- * - 两者范围完全不重叠
- */
-const SIGN_BIT = 0x4000000000000000; // 2^62 - 用于标记私聊 ID
-const ABS_MASK = 0x3FFFFFFFFFFFFFFF; // 掩码：用于提取实际的 ID 值
-
-/**
- * 将 Telegram Chat ID（可能是负数）转换为统一的正数 ID
- *
- * @param telegramId - Telegram 原始 Chat ID（正数为私聊，负数为群组）
- * @returns 统一的正数 ID（私聊有高位标记，群组为绝对值）
- */
-function telegramIdToPublicId(telegramId: string | number): string {
-  const id = typeof telegramId === 'string' ? parseInt(telegramId, 10) : telegramId;
-
-  if (id > 0) {
-    // 私聊：在高比特位设置标记位
-    // 这样 1234567890 → 4611686018427388490
-    return String(SIGN_BIT | (id & ABS_MASK));
-  }
-
-  // 群组/频道：返回绝对值（没有标记位）
-  return String(Math.abs(id));
-}
-
-/**
- * 将统一的正数 ID 转换回 Telegram Chat ID
- *
- * @param publicId - 统一的正数 ID（可能包含高位标记）
- * @returns Telegram 原始 Chat ID（私聊为正数，群组为负数）
- */
-function publicIdToTelegramId(publicId: string | number): string {
-  const id = typeof publicId === 'string' ? parseInt(publicId, 10) : publicId;
-
-  // 检查是否有私聊标记位（第62位为1）
-  if ((id & SIGN_BIT) !== 0) {
-    // 私聊：去掉标记位，返回正数
-    return String(id & ABS_MASK);
-  }
-
-  // 没有标记位：直接返回原值
-  // 可能是：
-  // - 群组 ID（负数）：如 -5175020124
-  // - 用户 ID（正数，无标记）：如 5540291904
-  return String(id);
-}
-
 /**
  * 智能推断目标类型（从 ID 格式）
- *
- * @param id - 目标 ID
- * @returns 推断的类型，如果无法推断则返回 null
+ * 直接使用 Telegram 原始 ID，无需转换
  */
 function inferTargetType(id: string): TargetType | null {
   // @username 公开用户名/频道/群组
   if (id.startsWith('@')) {
-    // 进一步判断：频道通常有特定的命名模式，但很难100%确定
-    // 这里保守处理：@username 都当作 channel，用户可以通过 targetType 覆盖
     return 'channel';
   }
 
-  // 纯数字 ID - 根据正负号和标记位判断
-  const num = parseInt(id, 10);
-  if (!isNaN(num)) {
-    // 检查是否有私聊标记位（第62位为1）
-    if ((num & SIGN_BIT) !== 0) {
-      return 'user';  // 私聊（有高位标记）
-    }
-    // 普通正数 = 用户
-    if (num > 0 && num < SIGN_BIT) {
+  // 纯数字 ID - 根据正负号判断
+  try {
+    const num = BigInt(id);
+    // 正数 = 用户/私聊
+    if (num > 0n) {
       return 'user';
     }
-    // 其他情况当作群组
+    // 负数 = 群组/频道
     return 'group';
+  } catch {
+    return null;
   }
-
-  // 无法推断
-  return null;
 }
 
 /**
@@ -163,9 +87,47 @@ export class TelegramAdapter implements FullAdapter {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: true, edit: true, delete: true, threads: true, quote: true },
       interaction: { buttons: true, polls: true, reactions: true, stickers: true, effects: true },
-      discovery: { history: false, search: false, pins: false, memberInfo: true, channelInfo: true },
-      management: { kick: true, ban: true, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: true },
-      advanced: { inline: true, deepLinks: true, miniApps: false, topics: true, batch: false, payments: false, games: true, videoChat: false, stories: false, customEmoji: true, webhooks: true, menuButton: true },
+      discovery: {
+        history: false,
+        search: false,
+        pins: true,
+        pinMessage: true,
+        unpinMessage: true,
+        memberInfo: true,
+        memberCount: true,
+        administrators: true,
+        channelInfo: true,
+      },
+      management: {
+        kick: true,
+        ban: true,
+        mute: true,
+        timeout: false,
+        unban: true,
+        channelCreate: false,
+        channelEdit: true,
+        channelDelete: false,
+        permissions: true,
+        setChatTitle: true,
+        setChatDescription: true,
+      },
+      advanced: {
+        inline: true,
+        deepLinks: true,
+        createInvite: true,
+        getInvites: true,
+        revokeInvite: true,
+        miniApps: false,
+        topics: true,
+        batch: false,
+        payments: false,
+        games: true,
+        videoChat: false,
+        stories: false,
+        customEmoji: true,
+        webhooks: true,
+        menuButton: true,
+      },
     };
   }
 
@@ -213,10 +175,15 @@ export class TelegramAdapter implements FullAdapter {
       this.bot.on("message", (msg: any) => this.handleTelegramMessage(msg));
       this.bot.on("callback_query", (query: any) => this.handleCallbackQuery(query));
 
-      // Handle polling errors
+      // Handle polling events
+      this.bot.on("polling", () => {
+        console.log("📨 Telegram polling started");
+      });
       this.bot.on("polling_error", (error: Error) => {
         console.error("Telegram polling error:", error);
       });
+
+      console.log("✅ Telegram bot initialized with polling:", this.config.polling !== false);
     } catch (error: any) {
       if ((error as any).code === "MODULE_NOT_FOUND") {
         console.warn("node-telegram-bot-api not installed. Install with: npm install node-telegram-bot-api");
@@ -241,15 +208,7 @@ export class TelegramAdapter implements FullAdapter {
       throw new Error("Either text, mediaUrl, stickerId, buttons, or poll is required");
     }
 
-    // 智能处理目标类型
-    const targetType = this.resolveTargetType(target, options?.targetType);
-
-    // 如果 targetType 提供了额外的验证，可以在这里使用
-    // 目前 Telegram 可以从 ID 格式推断，所以不需要额外处理
-
-    // 将统一的正数 ID 转换回 Telegram ID（群组时转回负数）
-    const telegramTarget = publicIdToTelegramId(target);
-
+    // 直接使用原始 Telegram ID
     const opts: any = {
       parse_mode: options?.parseMode === "markdown" ? "Markdown" : options?.parseMode === "html" ? "HTML" : undefined,
     };
@@ -321,23 +280,23 @@ export class TelegramAdapter implements FullAdapter {
         const mediaType = content.mediaType || "image";
 
         if (mediaType === "video") {
-          result = await this.bot.sendVideo(telegramTarget, content.mediaUrl, {
+          result = await this.bot.sendVideo(target, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else if (mediaType === "audio") {
-          result = await this.bot.sendAudio(telegramTarget, content.mediaUrl, {
+          result = await this.bot.sendAudio(target, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else if (mediaType === "file") {
-          result = await this.bot.sendDocument(telegramTarget, content.mediaUrl, {
+          result = await this.bot.sendDocument(target, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
         } else {
           // Default to photo for images
-          result = await this.bot.sendPhoto(telegramTarget, content.mediaUrl, {
+          result = await this.bot.sendPhoto(target, content.mediaUrl, {
             caption: content.text,
             ...opts,
           });
@@ -345,19 +304,19 @@ export class TelegramAdapter implements FullAdapter {
       }
       // Send text
       else if (content.text) {
-        result = await this.bot.sendMessage(telegramTarget, content.text, opts);
+        result = await this.bot.sendMessage(target, content.text, opts);
       } else {
         throw new Error("Either text, mediaUrl, stickerId, buttons, or poll is required");
       }
 
       return {
         platform: this.platform,
-        messageId: `${telegramTarget}:${result.message_id}`,
-        chatId: telegramIdToPublicId(telegramTarget), // 返回正数 ID 给用户
+        messageId: `${target}:${result.message_id}`,
+        chatId: target,
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to send message to ${telegramTarget}:`, error);
+      console.error(`Failed to send message to ${target}:`, error);
       throw error;
     }
   }
@@ -478,6 +437,30 @@ export class TelegramAdapter implements FullAdapter {
       };
     } catch (error) {
       console.error(`Failed to send poll to ${target}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Answer a callback query (remove loading state from button)
+   * @param callbackQueryId - The ID of the callback query to answer
+   * @param options - Optional parameters (text, showAlert)
+   */
+  async answerCallbackQuery(
+    callbackQueryId: string,
+    options?: { text?: string; showAlert?: boolean }
+  ): Promise<void> {
+    if (!this.bot) {
+      throw new Error("Telegram bot not initialized");
+    }
+
+    try {
+      await this.bot.answerCallbackQuery(callbackQueryId, {
+        text: options?.text,
+        show_alert: options?.showAlert || false,
+      });
+    } catch (error) {
+      console.error(`Failed to answer callback query ${callbackQueryId}:`, error);
       throw error;
     }
   }
@@ -624,10 +607,8 @@ export class TelegramAdapter implements FullAdapter {
       throw new Error("Telegram bot not initialized");
     }
 
-    const telegramTarget = publicIdToTelegramId(target);
-
     try {
-      const result = await this.bot.sendMessage(telegramTarget, text, {
+      const result = await this.bot.sendMessage(target, text, {
         reply_markup: {
           keyboard: options.keyboard.map((row) =>
             row.map((btn) => ({ text: btn.text }))
@@ -658,10 +639,8 @@ export class TelegramAdapter implements FullAdapter {
       throw new Error("Telegram bot not initialized");
     }
 
-    const telegramTarget = publicIdToTelegramId(target);
-
     try {
-      const result = await this.bot.sendMessage(telegramTarget, text || "键盘已隐藏", {
+      const result = await this.bot.sendMessage(target, text || "键盘已隐藏", {
         reply_markup: {
           remove_keyboard: true,
           selective: false,
@@ -790,7 +769,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to forward message from ${fromChatId} to ${to}:`, error);
+      console.error(`Failed to forward message from ${fromChat} to ${to}:`, error);
       throw error;
     }
   }
@@ -1912,8 +1891,11 @@ export class TelegramAdapter implements FullAdapter {
    */
   private handleTelegramMessage(msg: any): void {
     try {
-      const telegramChatId = msg.chat.id.toString();
-      const chatId = telegramIdToPublicId(telegramChatId); // 转换为正数
+      // Debug: Log raw message for troubleshooting
+      console.log(`📨 TG RAW: chat_id=${msg.chat.id}, type=${msg.chat.type}, text="${msg.text?.substring(0, 50)}", entities=${JSON.stringify(msg.entities?.map((e: any) => e.type))}`);
+
+      // 直接使用原始 Telegram ID
+      const chatId = msg.chat.id.toString();
 
       const isGroup = msg.chat.type === "supergroup" || msg.chat.type === "group";
       const isChannel = msg.chat.type === "channel";
@@ -1927,7 +1909,7 @@ export class TelegramAdapter implements FullAdapter {
       };
 
       const to: Participant = {
-        id: chatId, // 使用转换后的正数 ID
+        id: chatId,
         type: isGroup ? "group" : isChannel ? "channel" : "user",
         name: msg.chat.title || msg.chat.username || chatId,
       };
@@ -2002,6 +1984,7 @@ export class TelegramAdapter implements FullAdapter {
    */
   private handleCallbackQuery(query: any): void {
     try {
+      // 直接使用原始 Telegram ID
       const chatId = query.message.chat.id.toString();
 
       const from: Participant = {
@@ -2022,7 +2005,7 @@ export class TelegramAdapter implements FullAdapter {
         from,
         to,
         content: {
-          text: `[Callback: ${query.data}]`,
+          text: query.data || "",
         },
         replyTo: {
           messageId: `${chatId}:${query.message.message_id}`,
@@ -2046,5 +2029,345 @@ export class TelegramAdapter implements FullAdapter {
     } catch (error) {
       console.error("Failed to handle callback query:", error);
     }
+  }
+
+  // ============================================================================
+  // Unified API Methods (Standardized across platforms)
+  // ============================================================================
+
+  /**
+   * Create invite link
+   */
+  async createInvite(
+    chatId: string,
+    options?: import("@omnichat/core").UnifiedInviteOptions
+  ): Promise<import("@omnichat/core").UnifiedInviteResult> {
+    const telegramOptions: {
+      name?: string;
+      expireDate?: number;
+      memberLimit?: number;
+      createsJoinRequest?: boolean;
+    } = {};
+
+    if (options?.name) telegramOptions.name = options.name;
+    if (options?.maxUses) telegramOptions.memberLimit = options.maxUses;
+    if (options?.expiresInSeconds) {
+      telegramOptions.expireDate = Math.floor(Date.now() / 1000) + options.expiresInSeconds;
+    }
+    if (options?.telegram?.createsJoinRequest !== undefined) {
+      telegramOptions.createsJoinRequest = options.telegram.createsJoinRequest;
+    }
+
+    const result = await this.createChatInviteLink(chatId, telegramOptions);
+
+    return {
+      url: result.inviteLink,
+      code: this.extractInviteCode(result.inviteLink),
+      creator: result.creator ? this.mapTelegramUserToParticipant(result.creator) : undefined,
+      maxUses: result.memberLimit,
+      expiresAt: result.expireDate,
+      isPrimary: result.isPrimary,
+      raw: result,
+    };
+  }
+
+  /**
+   * Get invites list
+   */
+  async getInvites(
+    chatId: string
+  ): Promise<import("@omnichat/core").UnifiedInviteResult[]> {
+    // Telegram doesn't have a "list invites" API
+    // We can only get the primary invite link
+    try {
+      const link = await this.exportChatInviteLink(chatId);
+      return [{
+        url: link,
+        code: this.extractInviteCode(link),
+        isPrimary: true,
+      }];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Revoke invite
+   */
+  async revokeInvite(
+    chatId: string,
+    inviteCode: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      // For Telegram, inviteCode is the full URL
+      await this.revokeChatInviteLink(chatId, inviteCode.startsWith("https://") ? inviteCode : `https://t.me/+${inviteCode}`);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Pin message
+   */
+  async pinMessage(
+    chatId: string,
+    messageId: string,
+    options?: import("@omnichat/core").UnifiedPinOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      const unifiedMessageId = `${chatId}:${messageId}`;
+      await this.pinChatMessage(unifiedMessageId, {
+        disableNotification: options?.silent,
+      });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Unpin message
+   */
+  async unpinMessage(
+    chatId: string,
+    messageId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      const unifiedMessageId = `${chatId}:${messageId}`;
+      await this.unpinChatMessage(unifiedMessageId);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get member info
+   */
+  async getMemberInfo(
+    chatId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedMemberInfo> {
+    const member = await this.getChatMember(chatId, userId);
+    return {
+      id: member.id,
+      name: member.name,
+      username: member.username,
+      avatar: member.avatar,
+      roles: member.roles,
+    };
+  }
+
+  /**
+   * Get member count
+   */
+  async getMemberCount(chatId: string): Promise<number> {
+    return this.getChatMemberCount(chatId);
+  }
+
+  /**
+   * Get administrators
+   */
+  async getAdministrators(
+    chatId: string
+  ): Promise<import("@omnichat/core").UnifiedMemberInfo[]> {
+    const admins = await this.getChatAdministrators(chatId);
+    return admins.map((admin) => ({
+      id: admin.id,
+      name: admin.name,
+      username: admin.username,
+      roles: admin.roles,
+      isAdmin: true,
+    }));
+  }
+
+  /**
+   * Kick user
+   */
+  async kick(
+    chatId: string,
+    userId: string,
+    options?: import("@omnichat/core").UnifiedModerationOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      // In Telegram, kick = ban (but user can rejoin if not banned)
+      // We use ban with revokeMessages option
+      await this.banChatMember(chatId, userId, {
+        untilDate: 0, // Permanent
+        revokeMessages: options?.deleteMessages,
+      });
+      // Then immediately unban to allow rejoining (like kick)
+      await this.unbanChatMember(chatId, userId, true);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Ban user
+   */
+  async ban(
+    chatId: string,
+    userId: string,
+    options?: import("@omnichat/core").UnifiedModerationOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.banChatMember(chatId, userId, {
+        untilDate: options?.telegram?.untilDate,
+        revokeMessages: options?.deleteMessages,
+      });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Unban user
+   */
+  async unban(
+    chatId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.unbanChatMember(chatId, userId);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Mute user
+   */
+  async mute(
+    chatId: string,
+    userId: string,
+    options: import("@omnichat/core").UnifiedMuteOptions
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      const untilDate = options.durationSeconds
+        ? Math.floor(Date.now() / 1000) + options.durationSeconds
+        : 0;
+
+      // Use restrictChatMember with limited permissions
+      const permissions = options.telegram?.permissions || {
+        canSendMessages: false,
+        canSendAudios: false,
+        canSendDocuments: false,
+        canSendPhotos: false,
+        canSendVideos: false,
+        canSendVideoNotes: false,
+        canSendVoiceNotes: false,
+        canSendPolls: false,
+        canSendOtherMessages: false,
+        canAddWebPagePreviews: false,
+        canChangeInfo: false,
+        canInviteUsers: false,
+        canPinMessages: false,
+        canManageTopics: false,
+      };
+
+      await this.restrictChatMember(chatId, userId, permissions, {
+        untilDate,
+      });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Unmute user
+   */
+  async unmute(
+    chatId: string,
+    userId: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      // Restore full permissions
+      const fullPermissions = {
+        canSendMessages: true,
+        canSendAudios: true,
+        canSendDocuments: true,
+        canSendPhotos: true,
+        canSendVideos: true,
+        canSendVideoNotes: true,
+        canSendVoiceNotes: true,
+        canSendPolls: true,
+        canSendOtherMessages: true,
+        canAddWebPagePreviews: true,
+        canChangeInfo: false, // These are typically admin-only
+        canInviteUsers: true,
+        canPinMessages: false,
+        canManageTopics: false,
+      };
+
+      await this.restrictChatMember(chatId, userId, fullPermissions);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Set chat title
+   */
+  async setTitle(
+    chatId: string,
+    title: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.setChatTitle(chatId, title);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Set chat description
+   */
+  async setDescription(
+    chatId: string,
+    description: string
+  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    try {
+      await this.setChatDescription(chatId, description || undefined);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Create DM channel (just returns userId for Telegram)
+   */
+  async createDMChannel(userId: string): Promise<string> {
+    // In Telegram, you can directly send messages to users by ID
+    return userId;
+  }
+
+  // Helper methods
+
+  private extractInviteCode(url: string): string {
+    // Extract code from https://t.me/+xxxxx or https://t.me/joinchat/xxxxx
+    const match = url.match(/t\.me\/\+(.+)$/);
+    if (match) return match[1];
+    const match2 = url.match(/t\.me\/joinchat\/(.+)$/);
+    if (match2) return match2[1];
+    // Just return the last segment
+    return url.split("/").pop() || url;
+  }
+
+  private mapTelegramUserToParticipant(user: any): Participant {
+    return {
+      id: String(user.id),
+      name: user.first_name || "Unknown",
+      username: user.username,
+      avatar: undefined, // Telegram requires separate API call for photos
+    };
   }
 }

@@ -7,6 +7,7 @@ import type { CommandHandler } from "../types.js";
 import { WelcomeService } from "../services/welcome-service.js";
 import { StatsService } from "../services/stats-service.js";
 import { NoteService } from "../services/note-service.js";
+import { PLATFORMS, BOT_LIMITS, TIME_MS } from "@omnichat/core";
 
 export const welcomeCommand: CommandHandler = {
   description: "设置欢迎消息 [管理员]",
@@ -20,12 +21,12 @@ export const welcomeCommand: CommandHandler = {
       const response = current
         ? `📝 当前欢迎消息：\n\n${current}`
         : "❌ 未设置欢迎消息\n\n用法: /welcome <消息内容>\n\n💡 使用 {members} 来提及新成员";
-      await sdk.send(message.platform, { text: response }, { to: message.from.id });
+      await sdk.send(message.platform, { text: response }, { to: message.to.id });
       return;
     }
 
     WelcomeService.setWelcomeMessage(message.to.id, args);
-    await sdk.send(message.platform, { text: "✅ 欢迎消息已设置！" }, { to: message.from.id });
+    await sdk.send(message.platform, { text: "✅ 欢迎消息已设置！" }, { to: message.to.id });
     console.log(`✅ Welcome message set for ${message.to.id}`);
   },
 };
@@ -42,12 +43,12 @@ export const rulesCommand: CommandHandler = {
       const response = current
         ? `📜 当前群组规则：\n\n${current}`
         : "❌ 未设置群组规则\n\n用法: /rules <规则内容>";
-      await sdk.send(message.platform, { text: response }, { to: message.from.id });
+      await sdk.send(message.platform, { text: response }, { to: message.to.id });
       return;
     }
 
     WelcomeService.setRules(message.to.id, args);
-    await sdk.send(message.platform, { text: "✅ 群组规则已设置！" }, { to: message.from.id });
+    await sdk.send(message.platform, { text: "✅ 群组规则已设置！" }, { to: message.to.id });
     console.log(`✅ Rules set for ${message.to.id}`);
   },
 };
@@ -60,7 +61,7 @@ export const announceCommand: CommandHandler = {
     const args = text.split(" ").slice(1).join(" ");
 
     if (!args) {
-      await sdk.send(message.platform, { text: "❌ 请输入公告内容\n\n用法: /announce <公告内容>" }, { to: message.from.id });
+      await sdk.send(message.platform, { text: "❌ 请输入公告内容\n\n用法: /announce <公告内容>" }, { to: message.to.id });
       return;
     }
 
@@ -78,7 +79,7 @@ export const statsCommand: CommandHandler = {
   description: "查看群组统计信息",
   handler: async (message, sdk) => {
     const statsText = StatsService.formatStats(message.to.id);
-    await sdk.send(message.platform, { text: statsText }, { to: message.from.id });
+    await sdk.send(message.platform, { text: statsText }, { to: message.to.id });
     console.log(`✅ Stats sent for ${message.to.id}`);
   },
 };
@@ -89,44 +90,37 @@ export const inviteCommand: CommandHandler = {
   handler: async (message, sdk) => {
     console.log("📤 Command: /invite - Create invite link");
 
-    // Telegram-only feature
-    if (message.platform !== "telegram") {
+    // Check platform support using capability
+    if (!sdk.supports(message.platform, "advanced.createInvite")) {
       await sdk.send(message.platform, {
         text: "ℹ️ 此功能目前仅支持 Telegram\n⏳ 其他平台支持正在开发中...",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
-    const telegramAdapter = sdk.getAdapter("telegram") as any;
-    if (telegramAdapter && typeof telegramAdapter.createInviteLink === "function") {
-      try {
-        if (message.to.type === "user") {
-          await sdk.send(message.platform, {
-            text: "ℹ️ 邀请链接仅适用于群组和频道。\n\n💡 将 bot 添加到群组以测试此功能！",
-          }, { to: message.from.id });
-          return;
-        }
-
-        const invite = await telegramAdapter.createInviteLink(message.to.id, {
-          name: "群组邀请",
-          memberLimit: 10,
-          expireDate: Date.now() + 3600000,
-        });
-
+    try {
+      if (message.to.type === "user") {
         await sdk.send(message.platform, {
-          text: `✅ 邀请链接已创建！\n\n🔗 ${invite.inviteLink}\n\n⏰ 过期时间: ${new Date(invite.expireDate || 0).toLocaleString()}\n👥 成员限制: ${invite.memberLimit || "无限"}`,
-        }, { to: message.from.id });
-
-        console.log("✅ Invite link created:", invite.inviteLink);
-      } catch (error: any) {
-        await sdk.send(message.platform, {
-          text: `❌ 创建邀请链接失败: ${error.message}`,
-        }, { to: message.from.id });
+          text: "ℹ️ 邀请链接仅适用于群组和频道。\n\n💡 将 bot 添加到群组以测试此功能！",
+        }, { to: message.to.id });
+        return;
       }
-    } else {
+
+      // Use unified API
+      const invite = await sdk.createInvite(message.platform, message.to.id, {
+        maxUses: BOT_LIMITS.INVITE_MAX_USES_DEFAULT,
+        expiresInSeconds: Math.floor(TIME_MS.ONE_HOUR / 1000), // Convert ms to seconds
+      });
+
       await sdk.send(message.platform, {
-        text: "❌ 此功能不支持",
-      }, { to: message.from.id });
+        text: `✅ 邀请链接已创建！\n\n🔗 ${invite.url}\n\n⏰ 过期时间: ${invite.expiresAt ? new Date(invite.expiresAt).toLocaleString() : "无限"}\n👥 成员限制: ${invite.maxUses || "无限"}`,
+      }, { to: message.to.id });
+
+      console.log("✅ Invite link created:", invite.url);
+    } catch (error: any) {
+      await sdk.send(message.platform, {
+        text: `❌ 创建邀请链接失败: ${error.message}`,
+      }, { to: message.to.id });
     }
   },
 };

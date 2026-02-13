@@ -18,7 +18,7 @@ export const warnCommand: CommandHandler = {
     if (!username) {
       await sdk.send(message.platform, {
         text: "❌ 请指定要警告的用户\n\n用法: /warn @用户名 <原因>",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
@@ -56,7 +56,7 @@ export const muteCommand: CommandHandler = {
     if (!username) {
       await sdk.send(message.platform, {
         text: "❌ 请指定要禁言的用户\n\n用法: /mute @用户名 <时长>\n\n时长格式: 1h, 30m, 1d",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
@@ -64,7 +64,7 @@ export const muteCommand: CommandHandler = {
     if (!duration) {
       await sdk.send(message.platform, {
         text: "❌ 无效的时长格式\n\n支持格式: 1h, 30m, 1d\n• h = 小时\n• m = 分钟\n• d = 天",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
@@ -98,7 +98,7 @@ export const kickCommand: CommandHandler = {
     if (!username) {
       await sdk.send(message.platform, {
         text: "❌ 请指定要踢出的用户\n\n用法: /kick @用户名 <原因>",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
@@ -131,7 +131,7 @@ export const banCommand: CommandHandler = {
     if (!username) {
       await sdk.send(message.platform, {
         text: "❌ 请指定要封禁的用户\n\n用法: /ban @用户名 <原因>",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
@@ -169,7 +169,7 @@ export const advancedCommand: CommandHandler = {
       if (caps.advanced.topics) advancedText.push("   • Forum Topics");
     }
 
-    await sdk.send(message.platform, { text: advancedText.join("\n") }, { to: message.from.id });
+    await sdk.send(message.platform, { text: advancedText.join("\n") }, { to: message.to.id });
   },
 };
 
@@ -178,7 +178,7 @@ export const capsCommand: CommandHandler = {
   handler: async (message, sdk) => {
     const caps = sdk.getCapabilities(message.platform);
     if (!caps) {
-      await sdk.send(message.platform, { text: "❌ 无可用能力数据" }, { to: message.from.id });
+      await sdk.send(message.platform, { text: "❌ 无可用能力数据" }, { to: message.to.id });
       return;
     }
 
@@ -200,7 +200,7 @@ export const capsCommand: CommandHandler = {
       `  超时: ${caps.management?.timeout ? "✅" : "❌"}`,
     ];
 
-    await sdk.send(message.platform, { text: capsText.join("\n") }, { to: message.from.id });
+    await sdk.send(message.platform, { text: capsText.join("\n") }, { to: message.to.id });
   },
 };
 
@@ -210,12 +210,12 @@ export const inlineCommand: CommandHandler = {
     if (!sdk.supports(message.platform, "advanced.inline")) {
       await sdk.send(message.platform, {
         text: "❌ Inline Mode 未启用\n\n💡 启用方法:\n1. 发送给 @BotFather\n2. /setinline\n3. 选择你的 bot\n4. 设置占位符文本",
-      }, { to: message.from.id });
+      }, { to: message.to.id });
       return;
     }
 
     await sdk.send(message.platform, {
       text: "✅ Inline Mode 可用！\n\n💡 ��试方法:\n在任何聊天中输入: @imsdkbot <查询>\n\n📝 示例: @imsdkbot test",
-    }, { to: message.from.id });
+    }, { to: message.to.id });
   },
 };

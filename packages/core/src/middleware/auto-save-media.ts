@@ -1,6 +1,7 @@
 import type { Message } from "../models/message.js";
 import type { ExtendedMessage } from "../models/extended-message.js";
 import type { Middleware } from "../core/sdk.js";
+import { PLATFORMS } from "../constants/platforms.js";
 
 /**
  * Auto-save media files middleware configuration
@@ -8,7 +9,7 @@ import type { Middleware } from "../core/sdk.js";
 export interface AutoSaveMediaConfig {
   /**
    * Platforms to enable auto-save for
-   * @default ['telegram', 'discord', 'slack']
+   * @default [PLATFORMS.TELEGRAM, PLATFORMS.DISCORD, 'slack']
    */
   platforms?: string[];
 
@@ -30,7 +31,7 @@ export interface AutoSaveMediaConfig {
  */
 export function createAutoSaveMediaMiddleware(config: AutoSaveMediaConfig = {}): Middleware {
   const {
-    platforms = ["telegram", "discord", "slack"],
+    platforms = [PLATFORMS.TELEGRAM, PLATFORMS.DISCORD, "slack"],
     mediaTypes = ["image", "video", "audio", "file"],
     downloadFile = true,
   } = config;

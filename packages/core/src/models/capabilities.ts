@@ -39,7 +39,11 @@ export interface DiscoveryCapabilities {
   history: boolean;
   search: boolean;
   pins: boolean;
+  pinMessage: boolean;
+  unpinMessage: boolean;
   memberInfo: boolean;
+  memberCount: boolean;
+  administrators: boolean;
   channelInfo: boolean;
   [key: string]: boolean;
 }
@@ -50,11 +54,15 @@ export interface DiscoveryCapabilities {
 export interface ManagementCapabilities {
   kick: boolean;
   ban: boolean;
-  timeout: boolean;
+  mute: boolean; // mute/timeout user
+  timeout: boolean; // alias for mute
+  unban: boolean;
   channelCreate: boolean;
   channelEdit: boolean;
   channelDelete: boolean;
   permissions: boolean;
+  setChatTitle: boolean;
+  setChatDescription: boolean;
   [key: string]: boolean;
 }
 
@@ -64,6 +72,9 @@ export interface ManagementCapabilities {
 export interface AdvancedCapabilities {
   inline: boolean; // Inline mode
   deepLinks: boolean; // Deep links/invite links
+  createInvite: boolean; // Create invite links
+  getInvites: boolean; // Get invite list
+  revokeInvite: boolean; // Revoke/delete invites
   miniApps: boolean; // Mini apps/web apps
   topics: boolean; // Forum topic management
   batch: boolean; // Batch operations
@@ -96,9 +107,47 @@ export const defaultCapabilities: Capabilities = {
   base: { sendText: false, sendMedia: false, receive: false },
   conversation: { reply: false, edit: false, delete: false, threads: false, quote: false },
   interaction: { buttons: false, polls: false, reactions: false, stickers: false, effects: false },
-  discovery: { history: false, search: false, pins: false, memberInfo: false, channelInfo: false },
-  management: { kick: false, ban: false, timeout: false, channelCreate: false, channelEdit: false, channelDelete: false, permissions: false },
-  advanced: { inline: false, deepLinks: false, miniApps: false, topics: false, batch: false, payments: false, games: false, videoChat: false, stories: false, customEmoji: false, webhooks: false, menuButton: false },
+  discovery: {
+    history: false,
+    search: false,
+    pins: false,
+    pinMessage: false,
+    unpinMessage: false,
+    memberInfo: false,
+    memberCount: false,
+    administrators: false,
+    channelInfo: false,
+  },
+  management: {
+    kick: false,
+    ban: false,
+    mute: false,
+    timeout: false,
+    unban: false,
+    channelCreate: false,
+    channelEdit: false,
+    channelDelete: false,
+    permissions: false,
+    setChatTitle: false,
+    setChatDescription: false,
+  },
+  advanced: {
+    inline: false,
+    deepLinks: false,
+    createInvite: false,
+    getInvites: false,
+    revokeInvite: false,
+    miniApps: false,
+    topics: false,
+    batch: false,
+    payments: false,
+    games: false,
+    videoChat: false,
+    stories: false,
+    customEmoji: false,
+    webhooks: false,
+    menuButton: false,
+  },
 };
 
 /**

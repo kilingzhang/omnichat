@@ -12,6 +12,7 @@ import type {
   AdapterTransformation,
 } from "../models/universal-features.js";
 import type { Platform } from "../models/message.js";
+import { PLATFORMS } from "../constants/platforms.js";
 
 /**
  * Base feature adapter
@@ -86,7 +87,7 @@ export class TelegramButtonAdapter extends BaseFeatureAdapter<
   any
 > {
   constructor() {
-    super("telegram");
+    super(PLATFORMS.TELEGRAM);
   }
 
   transform(component: UniversalComponent): AdapterTransformation<any> {
@@ -171,7 +172,7 @@ export class DiscordButtonAdapter extends BaseFeatureAdapter<
   any
 > {
   constructor() {
-    super("discord");
+    super(PLATFORMS.DISCORD);
   }
 
   transform(component: UniversalComponent): AdapterTransformation<any> {
@@ -506,8 +507,8 @@ export class ComponentTransformer {
 
   static {
     // Register default adapters
-    this.adapters.set("telegram", new TelegramButtonAdapter());
-    this.adapters.set("discord", new DiscordButtonAdapter());
+    this.adapters.set(PLATFORMS.TELEGRAM, new TelegramButtonAdapter());
+    this.adapters.set(PLATFORMS.DISCORD, new DiscordButtonAdapter());
     this.adapters.set("slack", new SlackButtonAdapter());
     this.adapters.set("whatsapp", new WhatsAppButtonAdapter());
   }
@@ -591,14 +592,14 @@ export class ComponentTransformer {
    */
   private static formatForPlatform(platform: Platform, rows: any[][]): any {
     switch (platform) {
-      case "telegram":
+      case PLATFORMS.TELEGRAM:
         return {
           reply_markup: {
             inline_keyboard: rows,
           },
         };
 
-      case "discord":
+      case PLATFORMS.DISCORD:
         return {
           components: rows.map((row) => ({
             type: 1, // Action row

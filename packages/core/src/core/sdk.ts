@@ -4,24 +4,32 @@ import type {
   FullAdapter,
   PollInput,
   PollResult,
+  ChatAction,
 } from "./adapter.js";
 import type { Message, SendContent, SendOptions, SendResult } from "../models/message.js";
-import type { ExtendedMessage } from "../models/extended-message.js";
 import type { Capabilities } from "../models/capabilities.js";
 import type { StorageConfig } from "../storage/storage.js";
 import type {
   UniversalSendContent,
-  UniversalInteractiveElements,
   PlatformSpecificOptions,
 } from "../models/universal-features.js";
+import type {
+  UnifiedInviteOptions,
+  UnifiedInviteResult,
+  UnifiedPinOptions,
+  UnifiedResult,
+  UnifiedMemberInfo,
+  UnifiedModerationOptions,
+  UnifiedMuteOptions,
+} from "../models/unified-adapter.js";
 import {
   AdapterNotFoundError,
   CapabilityNotSupportedError,
-  ConfigurationError,
 } from "../errors/index.js";
 import { StorageManager } from "../storage/manager.js";
 import { extendMessage } from "../models/extended-message.js";
 import { ComponentTransformer } from "../utils/feature-adapter.js";
+import { PLATFORMS } from "../constants/platforms.js";
 
 /**
  * SDK initialization options
@@ -419,34 +427,24 @@ export class SDK {
     const options: SendOptions = {};
 
     switch (platform) {
-      case "telegram":
+      case PLATFORMS.TELEGRAM:
         if (platformOptions.telegram) {
           const telegramOpts = platformOptions.telegram;
           if (telegramOpts.parseMode) {
             options.parseMode = telegramOpts.parseMode.toLowerCase() as "markdown" | "html";
           }
-          // Add more Telegram-specific options as needed
         }
         break;
 
-      case "discord":
+      case PLATFORMS.DISCORD:
         if (platformOptions.discord) {
           // Discord-specific options would go here
-          // Note: Discord doesn't use SendOptions the same way
         }
         break;
 
-      case "slack":
-        if (platformOptions.slack) {
-          // Slack-specific options would go here
-        }
-        break;
-
-      case "whatsapp":
-        if (platformOptions.whatsapp) {
-          // WhatsApp-specific options would go here
-        }
-        break;
+      // Future platforms
+      // case PLATFORMS.SLACK:
+      // case PLATFORMS.WHATSAPP:
     }
 
     return options;
@@ -540,6 +538,478 @@ export class SDK {
    */
   getStorage() {
     return this.storageManager;
+  }
+
+  // ============================================================================
+  // Group Management - Unified APIs
+  // ============================================================================
+
+  /**
+   * Kick a user from a chat/group
+   */
+  async kickUser(
+    platform: string,
+    chatId: string,
+    userId: string,
+    options?: UnifiedModerationOptions
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.kick) {
+      return adapter.kick(chatId, userId, options);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "kickUser");
+  }
+
+  /**
+   * Ban a user from a chat/group
+   */
+  async banUser(
+    platform: string,
+    chatId: string,
+    userId: string,
+    options?: UnifiedModerationOptions
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.ban) {
+      return adapter.ban(chatId, userId, options);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "banUser");
+  }
+
+  /**
+   * Unban a user from a chat/group
+   */
+  async unbanUser(
+    platform: string,
+    chatId: string,
+    userId: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.unban) {
+      return adapter.unban(chatId, userId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "unbanUser");
+  }
+
+  /**
+   * Mute/timeout a user in a chat/group
+   */
+  async muteUser(
+    platform: string,
+    chatId: string,
+    userId: string,
+    options: UnifiedMuteOptions
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.mute) {
+      return adapter.mute(chatId, userId, options);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "muteUser");
+  }
+
+  /**
+   * Unmute/remove timeout from a user
+   */
+  async unmuteUser(
+    platform: string,
+    chatId: string,
+    userId: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.unmute) {
+      return adapter.unmute(chatId, userId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "unmuteUser");
+  }
+
+  // ============================================================================
+  // Invite Management - Unified APIs
+  // ============================================================================
+
+  /**
+   * Create an invite link
+   */
+  async createInvite(
+    platform: string,
+    chatId: string,
+    options?: UnifiedInviteOptions
+  ): Promise<UnifiedInviteResult> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.createInvite) {
+      return adapter.createInvite(chatId, options);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "createInvite");
+  }
+
+  /**
+   * Get invites for a chat/group
+   */
+  async getInvites(
+    platform: string,
+    chatId: string
+  ): Promise<UnifiedInviteResult[]> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.getInvites) {
+      return adapter.getInvites(chatId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "getInvites");
+  }
+
+  /**
+   * Revoke/delete an invite
+   */
+  async revokeInvite(
+    platform: string,
+    chatId: string,
+    inviteCode: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.revokeInvite) {
+      return adapter.revokeInvite(chatId, inviteCode);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "revokeInvite");
+  }
+
+  /**
+   * Export primary invite link
+   */
+  async exportInvite(platform: string, chatId: string): Promise<string> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.exportInvite) {
+      return adapter.exportInvite(chatId);
+    }
+
+    // Fallback: get invites and return first one
+    const invites = await this.getInvites(platform, chatId);
+    if (invites.length > 0) {
+      return invites[0].url;
+    }
+
+    throw new CapabilityNotSupportedError(platform, "exportInvite");
+  }
+
+  // ============================================================================
+  // Message Pinning - Unified APIs
+  // ============================================================================
+
+  /**
+   * Pin a message
+   */
+  async pinMessage(
+    platform: string,
+    chatId: string,
+    messageId: string,
+    options?: UnifiedPinOptions
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.pinMessage) {
+      return adapter.pinMessage(chatId, messageId, options);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "pinMessage");
+  }
+
+  /**
+   * Unpin a message
+   */
+  async unpinMessage(
+    platform: string,
+    chatId: string,
+    messageId: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.unpinMessage) {
+      return adapter.unpinMessage(chatId, messageId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "unpinMessage");
+  }
+
+  // ============================================================================
+  // Member Info - Unified APIs
+  // ============================================================================
+
+  /**
+   * Get member information
+   */
+  async getMember(
+    platform: string,
+    chatId: string,
+    userId: string
+  ): Promise<UnifiedMemberInfo> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.getMemberInfo) {
+      return adapter.getMemberInfo(chatId, userId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "getMember");
+  }
+
+  /**
+   * Get member count for a chat/group
+   */
+  async getMemberCount(platform: string, chatId: string): Promise<number> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.getMemberCount) {
+      return adapter.getMemberCount(chatId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "getMemberCount");
+  }
+
+  /**
+   * Get administrators of a chat/group
+   */
+  async getAdministrators(
+    platform: string,
+    chatId: string
+  ): Promise<UnifiedMemberInfo[]> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.getAdministrators) {
+      return adapter.getAdministrators(chatId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "getAdministrators");
+  }
+
+  // ============================================================================
+  // Chat Settings - Unified APIs
+  // ============================================================================
+
+  /**
+   * Set chat/group title
+   */
+  async setChatTitle(
+    platform: string,
+    chatId: string,
+    title: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.setTitle) {
+      return adapter.setTitle(chatId, title);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "setChatTitle");
+  }
+
+  /**
+   * Set chat/group description
+   */
+  async setChatDescription(
+    platform: string,
+    chatId: string,
+    description: string
+  ): Promise<UnifiedResult<void>> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.setDescription) {
+      return adapter.setDescription(chatId, description);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "setChatDescription");
+  }
+
+  // ============================================================================
+  // Chat Actions & Callbacks - Unified APIs
+  // ============================================================================
+
+  /**
+   * Send a chat action (typing indicator, etc.)
+   * Telegram: sendChatAction
+   * Discord: sendTyping
+   */
+  async sendChatAction(platform: string, chatId: string, action: ChatAction): Promise<void> {
+    const adapter = this.adapters.get(platform);
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (platform === PLATFORMS.TELEGRAM) {
+      const telegramAdapter = adapter as any;
+      if (!telegramAdapter.sendChatAction) {
+        throw new CapabilityNotSupportedError(platform, "sendChatAction");
+      }
+      await telegramAdapter.sendChatAction(chatId, action);
+    } else if (platform === PLATFORMS.DISCORD) {
+      const discordAdapter = adapter as any;
+      if (discordAdapter.client) {
+        const channel = await discordAdapter.client.channels.fetch(chatId);
+        if (channel && channel.isTextBased && channel.isTextBased()) {
+          if (action === "typing") {
+            await channel.sendTyping();
+          }
+        }
+      }
+    } else {
+      throw new CapabilityNotSupportedError(platform, "sendChatAction");
+    }
+  }
+
+  /**
+   * Answer a callback query (button click response)
+   * Telegram: answerCallbackQuery
+   * Discord: deferUpdate / reply to interaction
+   */
+  async answerCallbackQuery(
+    platform: string,
+    callbackQueryId: string,
+    options?: { text?: string; showAlert?: boolean }
+  ): Promise<void> {
+    const adapter = this.adapters.get(platform);
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (platform === PLATFORMS.TELEGRAM) {
+      const telegramAdapter = adapter as any;
+      if (!telegramAdapter.answerCallbackQuery) {
+        throw new CapabilityNotSupportedError(platform, "answerCallbackQuery");
+      }
+      await telegramAdapter.answerCallbackQuery(callbackQueryId, options);
+    } else if (platform === PLATFORMS.DISCORD) {
+      // Discord uses interaction responses differently
+      // callbackQueryId is actually the interaction token
+      const discordAdapter = adapter as any;
+      if (discordAdapter.answerInteraction) {
+        await discordAdapter.answerInteraction(callbackQueryId, options?.text);
+      }
+    } else {
+      throw new CapabilityNotSupportedError(platform, "answerCallbackQuery");
+    }
+  }
+
+  // ============================================================================
+  // DM Channel Management - Unified APIs
+  // ============================================================================
+
+  /**
+   * Create or get a DM channel with a user
+   */
+  async createDMChannel(platform: string, userId: string): Promise<string> {
+    const adapter = this.adapters.get(platform) as any;
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (adapter.createDMChannel) {
+      return adapter.createDMChannel(userId);
+    }
+
+    throw new CapabilityNotSupportedError(platform, "createDMChannel");
+  }
+
+  // ============================================================================
+  // Guild/Server Info - Unified APIs
+  // ============================================================================
+
+  /**
+   * Get guilds/servers the bot is in
+   * Telegram: N/A (no concept of guilds)
+   * Discord: Get guilds from client cache
+   */
+  async getGuilds(
+    platform: string
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      icon?: string;
+      memberCount?: number;
+    }>
+  > {
+    const adapter = this.adapters.get(platform);
+    if (!adapter) {
+      throw new AdapterNotFoundError(platform);
+    }
+
+    if (platform === PLATFORMS.TELEGRAM) {
+      // Telegram doesn't have guilds concept
+      throw new CapabilityNotSupportedError(platform, "getGuilds");
+    } else if (platform === PLATFORMS.DISCORD) {
+      const discordAdapter = adapter as any;
+      if (discordAdapter.client && discordAdapter.client.guilds) {
+        return discordAdapter.client.guilds.cache.map((guild: any) => ({
+          id: guild.id,
+          name: guild.name,
+          icon: guild.iconURL?.(),
+          memberCount: guild.memberCount,
+        }));
+      }
+      throw new CapabilityNotSupportedError(platform, "getGuilds");
+    } else {
+      throw new CapabilityNotSupportedError(platform, "getGuilds");
+    }
   }
 
   /**

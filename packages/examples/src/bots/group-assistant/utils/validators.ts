@@ -46,16 +46,20 @@ export function isBotMentioned(message: Message, botId?: string): boolean {
 
     // Check Discord format <@bot_id>
     if (config.id && text.includes(`<@${config.id}>`)) {
+      console.log(`🔍 Bot mentioned via Discord format: <@${config.id}>`);
       return true;
     }
 
     // Check Telegram format @botname
     const botMentionPattern = new RegExp(`@${config.username}\\b`, 'i');
     if (botMentionPattern.test(text)) {
+      console.log(`🔍 Bot mentioned via Telegram format: @${config.username}`);
       return true;
     }
   }
 
+  console.log(`🔍 No bot mention found in text: "${text.substring(0, 50)}..."`);
+  console.log(`🔍 Checking against bot configs:`, configsToCheck.map(c => c?.username));
   return false;
 }
 
@@ -91,13 +95,26 @@ export function cleanCommandText(message: Message, botId?: string): string {
 }
 
 /**
+ * Check if message is a command (starts with /)
+ */
+export function isCommand(message: Message): boolean {
+  const text = message.content.text?.trim();
+  return !!text && text.startsWith('/');
+}
+
+/**
  * Check if message should be processed in group
+ * - Commands (starting with /): always process without @ mention
+ * - Non-commands in groups: only process if bot is mentioned
  */
 export function shouldProcessInGroup(message: Message, botId?: string): boolean {
   // In private chat, always process
   if (message.to.type === "user") return true;
 
-  // In group, only process if bot is mentioned
+  // Commands are always processed in groups (no @ needed)
+  if (isCommand(message)) return true;
+
+  // Non-commands in groups: only process if bot is mentioned
   return isBotMentioned(message, botId);
 }
 

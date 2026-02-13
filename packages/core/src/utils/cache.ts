@@ -5,6 +5,8 @@
  * Automatically cleans up expired entries.
  */
 
+import { TIME_MS } from "../constants/index.js";
+
 export interface CacheEntry<T> {
   value: T;
   expiresAt: number;
@@ -22,7 +24,7 @@ export class SimpleCache<T> {
    * @param ttl - Default TTL in milliseconds (default: 60 seconds)
    * @param cleanupInterval - Cleanup interval in milliseconds (default: 60 seconds)
    */
-  constructor(ttl = 60000, cleanupInterval = 60000) {
+  constructor(ttl = TIME_MS.ONE_MINUTE, cleanupInterval = TIME_MS.ONE_MINUTE) {
     this.defaultTtl = ttl;
 
     // Schedule periodic cleanup
@@ -145,6 +147,6 @@ export class SimpleCache<T> {
  * @param ttl - Default TTL in milliseconds
  * @returns SimpleCache instance
  */
-export function createCache<T>(ttl = 60000): SimpleCache<T> {
+export function createCache<T>(ttl = TIME_MS.ONE_MINUTE): SimpleCache<T> {
   return new SimpleCache<T>(ttl);
 }

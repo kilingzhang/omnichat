@@ -17,6 +17,25 @@ export type {
   ChatAction,
 } from "./core/adapter.js";
 
+// Constants
+export {
+  PLATFORMS,
+  PLATFORM_NAMES,
+  PLATFORM_ICONS,
+  isValidPlatform,
+  getPlatformInfo,
+  type PlatformType,
+} from "./constants/platforms.js";
+export {
+  DISCORD_LIMITS,
+  TELEGRAM_LIMITS,
+  BOT_LIMITS,
+  TIME_MS,
+  hoursToMs,
+  minutesToMs,
+  secondsToMs,
+} from "./constants/limits.js";
+
 // Models
 export type {
   Platform,
@@ -162,3 +181,33 @@ export type {
   PlatformAdapter,
   AdapterTransformation,
 } from "./models/universal-features.js";
+
+// Unified Adapter Types
+export type {
+  UnifiedResult,
+  PaginationOptions,
+  UnifiedInviteOptions,
+  UnifiedInviteResult,
+  UnifiedInviteMethods,
+  UnifiedPinOptions,
+  UnifiedPinMethods,
+  UnifiedMemberInfo,
+  UnifiedMemberMethods,
+  UnifiedModerationOptions,
+  UnifiedMuteOptions,
+  UnifiedModerationMethods,
+  UnifiedChatSettingsOptions,
+  UnifiedChatSettingsMethods,
+  UnifiedDMMethods,
+  UnifiedAdapterMethods,
+  PlatformFeatureSupport,
+} from "./models/unified-adapter.js";
+export {
+  getDefaultFeatureSupport,
+  discordInviteToUnified,
+  unifiedInviteToDiscord,
+  telegramInviteToUnified,
+  unifiedInviteToTelegram,
+  discordDurationToSeconds,
+  secondsToDiscordDuration,
+} from "./models/unified-adapter.js";

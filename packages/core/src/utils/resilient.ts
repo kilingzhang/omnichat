@@ -6,6 +6,7 @@
 
 import { delay, withRetry, type RetryOptions } from './rate-limit.js';
 import { Logger } from './logger.js';
+import { TIME_MS } from '../constants/index.js';
 
 /**
  * Circuit breaker states
@@ -26,6 +27,16 @@ export interface CircuitBreakerOptions {
 }
 
 /**
+ * Default circuit breaker reset timeout
+ */
+const DEFAULT_RESET_TIMEOUT = TIME_MS.ONE_MINUTE;
+
+/**
+ * Default monitoring period (10 seconds)
+ */
+const DEFAULT_MONITORING_PERIOD = TIME_MS.TEN_MINUTES / 6;
+
+/**
  * Circuit breaker implementation
  *
  * Fails fast when a service is consistently failing.
@@ -42,8 +53,8 @@ export class CircuitBreaker {
   ) {
     this.options = {
       failureThreshold: 5,
-      resetTimeout: 60000,
-      monitoringPeriod: 10000,
+      resetTimeout: DEFAULT_RESET_TIMEOUT,
+      monitoringPeriod: DEFAULT_MONITORING_PERIOD,
       ...options
     };
     this.logger = new Logger('CircuitBreaker');

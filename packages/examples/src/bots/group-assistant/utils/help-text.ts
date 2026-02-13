@@ -66,6 +66,16 @@ export function generateHelpText(commands: CommandRegistry): string {
     }
   });
 
+  // Discord-specific features
+  lines.push("", "🎮 Discord 专属");
+  const discordCommands = ["/selectmenu", "/modal", "/mention", "/slash", "/embed"];
+  discordCommands.forEach(cmd => {
+    const info = commands[cmd];
+    if (info) {
+      lines.push(`   ${cmd.padEnd(10)} - ${info.description}`);
+    }
+  });
+
   lines.push("", "━━━━━━━━━━━━━━━━━━━━━");
   lines.push("", "💡 发送 /start 查看详细说明");
 

@@ -32,10 +32,17 @@ export const startCommand: CommandHandler = {
       "   /schedule - 定时消息",
       "   /dm - 测试私聊（Discord）",
       "",
+      "🎮 Discord 专属",
+      "   /selectmenu - 下拉菜单",
+      "   /modal - 模态框表单",
+      "   /mention - 用户选择器",
+      "   /slash - 斜杠命令",
+      "   /embed - 嵌入消息",
+      "",
       "💡 发送 /help 查看所有命令的详细说明",
     ].join("\n");
 
-    await sdk.send(message.platform, { text: welcomeText }, { to: message.from.id });
+    await sdk.send(message.platform, { text: welcomeText }, { to: message.to.id });
     console.log("✅ Welcome message sent");
   },
 };
@@ -45,7 +52,7 @@ export const helpCommand: CommandHandler = {
   handler: async (message, sdk) => {
     const { getCommands } = await import("./index.js");
     const helpText = generateHelpText(getCommands());
-    await sdk.send(message.platform, { text: helpText }, { to: message.from.id });
+    await sdk.send(message.platform, { text: helpText }, { to: message.to.id });
     console.log("✅ Help message sent");
   },
 };
@@ -80,7 +87,7 @@ export const idCommand: CommandHandler = {
         "⚠️ Note: In private chats, Chat ID = User ID",
       ];
 
-      await sdk.send(message.platform, { text: idInfo.join("\n") }, { to: message.from.id });
+      await sdk.send(message.platform, { text: idInfo.join("\n") }, { to: message.to.id });
     } else {
       // Group/Channel chat
       console.log("   Platform:", platform);
@@ -101,7 +108,7 @@ export const idCommand: CommandHandler = {
         `   ${platform}_USER_ID=${message.from.id}`,
       ];
 
-      await sdk.send(message.platform, { text: idInfo.join("\n") }, { to: message.from.id });
+      await sdk.send(message.platform, { text: idInfo.join("\n") }, { to: message.to.id });
     }
 
     console.log("✅ ID info sent");

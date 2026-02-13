@@ -876,11 +876,12 @@ describe("TelegramAdapter", () => {
           icon_color: 0x6FB9F0,
         });
 
-        const topic = await adapter.createForumTopic("@testgroup", "Test Topic", {
+        const topic = await adapter.createForumTopic("@testgroup", {
+          name: "Test Topic",
           iconColor: 0x6FB9F0,
         });
 
-        expect(topic.messageThreadId).toBe(123);
+        expect(topic.threadId).toBe(123);
         expect(mockBotInstance.createForumTopic).toHaveBeenCalledWith("@testgroup", "Test Topic", {
           icon_color: 0x6FB9F0,
           icon_custom_emoji_id: undefined,
@@ -889,7 +890,7 @@ describe("TelegramAdapter", () => {
 
       it("should throw error when bot is not initialized", async () => {
         const uninitializedAdapter = new TelegramAdapter();
-        await expect(uninitializedAdapter.createForumTopic("@test", "Topic")).rejects.toThrow(
+        await expect(uninitializedAdapter.createForumTopic("@test", { name: "Topic" })).rejects.toThrow(
           "Telegram bot not initialized"
         );
       });
@@ -899,7 +900,7 @@ describe("TelegramAdapter", () => {
       it("should edit forum topic successfully", async () => {
         mockBotInstance.editForumTopic.mockResolvedValue(true);
 
-        await adapter.editForumTopic("@testgroup", 123, { name: "Updated Topic" });
+        await adapter.editForumTopic("@testgroup", 123, "Updated Topic");
 
         expect(mockBotInstance.editForumTopic).toHaveBeenCalledWith("@testgroup", 123, {
           name: "Updated Topic",
@@ -908,7 +909,7 @@ describe("TelegramAdapter", () => {
 
       it("should throw error when bot is not initialized", async () => {
         const uninitializedAdapter = new TelegramAdapter();
-        await expect(uninitializedAdapter.editForumTopic("@test", 123, {})).rejects.toThrow(
+        await expect(uninitializedAdapter.editForumTopic("@test", 123, "Topic")).rejects.toThrow(
           "Telegram bot not initialized"
         );
       });
@@ -1114,14 +1115,14 @@ describe("TelegramAdapter", () => {
 
       it("should infer positive numeric ID as user", async () => {
         await adapter.send("123456789", { text: "Hello" });
-        // Positive number without SIGN_BIT = user
+        // Positive number = user (Telegram convention)
         expect(mockBotInstance.sendMessage).toHaveBeenCalled();
       });
 
-      it("should handle IDs with SIGN_BIT as user", async () => {
-        // ID with SIGN_BIT set (converted private chat)
-        const privateChatId = "4611686018427388490"; // 0x4000000000000000 + something
-        await adapter.send(privateChatId, { text: "Hello" });
+      it("should infer negative numeric ID as group", async () => {
+        // Negative number = group/supergroup (Telegram convention)
+        const groupId = "-1001234567890";
+        await adapter.send(groupId, { text: "Hello" });
         expect(mockBotInstance.sendMessage).toHaveBeenCalled();
       });
 

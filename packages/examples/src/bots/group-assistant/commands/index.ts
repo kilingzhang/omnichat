@@ -17,6 +17,11 @@ import {
   noteCommand,
   scheduleCommand,
   dmCommand,
+  selectMenuCommand,
+  modalCommand,
+  mentionCommand,
+  slashCommand,
+  embedCommand,
 } from "./interaction.js";
 import {
   advancedCommand,
@@ -74,6 +79,13 @@ export function getCommands(): CommandRegistry {
     "/caps": capsCommand,
     "/inline": inlineCommand,
     "/invite": inviteCommand,
+
+    // Discord-specific features
+    "/selectmenu": selectMenuCommand,
+    "/modal": modalCommand,
+    "/mention": mentionCommand,
+    "/slash": slashCommand,
+    "/embed": embedCommand,
   };
 }
 
@@ -103,4 +115,10 @@ export const commands = {
   caps: capsCommand,
   inline: inlineCommand,
   invite: inviteCommand,
+  // Discord-specific
+  selectmenu: selectMenuCommand,
+  modal: modalCommand,
+  mention: mentionCommand,
+  slash: slashCommand,
+  embed: embedCommand,
 };
