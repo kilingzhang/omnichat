@@ -141,7 +141,7 @@ class UniversalBotManager {
 
       await sdk.init();
 
-      adapter = sdk.getAdapter(PLATFORMS.DISCORD) as DiscordAdapter;
+      adapter = sdk.getAdapter(PLATFORMS.DISCORD) as unknown as DiscordAdapter;
 
       // Get bot username and ID from Discord
       const discordAdapter = adapter as any;

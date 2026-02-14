@@ -9,6 +9,7 @@ import type {
 } from "@omnichat/core";
 import type { Message, MessageContent, Participant, ReplyReference } from "@omnichat/core";
 import type { Capabilities } from "@omnichat/core";
+import { Logger } from "@omnichat/core";
 
 /**
  * WhatsApp adapter configuration
@@ -28,8 +29,10 @@ export class WhatsAppAdapter implements FullAdapter {
   private config?: WhatsAppConfig;
   private messageCallback?: (message: Message) => void;
   private capabilities: Capabilities;
+  private logger: Logger;
 
   constructor() {
+    this.logger = new Logger("WhatsAppAdapter");
     this.capabilities = {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: false, edit: false, delete: false, threads: false, quote: false },
@@ -72,8 +75,8 @@ export class WhatsAppAdapter implements FullAdapter {
       await this.client.start();
     } catch (error: any) {
       if ((error as any).code === "MODULE_NOT_FOUND") {
-        console.warn("@whiskeysockets/baileys not installed. Install with: npm install @whiskeysockets/baileys");
-        console.warn("Creating mock adapter for development...");
+        this.logger.warn("@whiskeysockets/baileys not installed. Install with: npm install @whiskeysockets/baileys");
+        this.logger.warn("Creating mock adapter for development...");
         this.client = null;
       } else {
         throw error;

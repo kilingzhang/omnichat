@@ -2,6 +2,9 @@ import type { Message } from "../models/message.js";
 import type { ExtendedMessage } from "../models/extended-message.js";
 import type { Middleware } from "../core/sdk.js";
 import { PLATFORMS } from "../constants/platforms.js";
+import { Logger } from "../utils/logger.js";
+
+const logger = new Logger("AutoSaveMedia");
 
 /**
  * Auto-save media files middleware configuration
@@ -59,13 +62,13 @@ export function createAutoSaveMediaMiddleware(config: AutoSaveMediaConfig = {}):
       // Get SDK from extended message
       const sdk = extended.sdk;
       if (!sdk) {
-        console.log("⚠️  No SDK in message");
+        logger.debug("No SDK in message");
         return next();
       }
 
       const storage = sdk.getStorage();
       if (!storage?.isConfigured()) {
-        console.log("⚠️  Storage not configured");
+        logger.debug("Storage not configured");
         return next();
       }
 
@@ -74,11 +77,11 @@ export function createAutoSaveMediaMiddleware(config: AutoSaveMediaConfig = {}):
 
       // Check if adapter has download method
       if (downloadFile && adapter && typeof (adapter as any).downloadFileAsBuffer === "function") {
-        console.log(`📥 Downloading media: ${extended.content.mediaUrl} (${extended.content.mediaType})`);
+        logger.debug(`Downloading media: ${extended.content.mediaUrl} (${extended.content.mediaType})`);
 
         const buffer = await (adapter as any).downloadFileAsBuffer(extended.content.mediaUrl);
 
-        console.log(`📦 Downloaded ${buffer.length} bytes`);
+        logger.debug(`Downloaded ${buffer.length} bytes`);
 
         // Generate file key
         const timestamp = Date.now();
@@ -100,13 +103,12 @@ export function createAutoSaveMediaMiddleware(config: AutoSaveMediaConfig = {}):
         extended.storageKey = key;
         extended.mediaSaved = true;
 
-        console.log(`✅ Saved media file: ${key} (${buffer.length} bytes)`);
+        logger.info(`Saved media file: ${key} (${buffer.length} bytes)`);
       } else {
-        console.log("⚠️  Download method not available");
+        logger.debug("Download method not available");
       }
     } catch (error: any) {
-      console.error(`❌ Failed to save media file:`, error);
-      console.error(`   Stack: ${error.stack}`);
+      logger.error(`Failed to save media file`, error);
     }
 
     return next();

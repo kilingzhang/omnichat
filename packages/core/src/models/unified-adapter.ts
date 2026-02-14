@@ -1,31 +1,31 @@
 /**
- * Unified Adapter Method Signatures
+ * Standard Adapter Types
  *
- * This module defines standardized method signatures for adapter private methods
+ * This module defines standard method signatures for adapter methods
  * that have equivalent functionality across platforms. Platform-specific extensions
  * are supported via optional parameters.
  *
  * Design Principles:
- * 1. Unified parameter names across all platforms
+ * 1. Consistent parameter names across all platforms
  * 2. Consistent return value formats
  * 3. Platform-specific options via dedicated extension objects
  * 4. Graceful handling of unsupported features
  */
 
-import type { Platform, Participant } from "./message.js";
+import type { Participant } from "./message.js";
 
 // ============================================================================
 // Common Types
 // ============================================================================
 
 /**
- * Unified result wrapper for operations
+ * Result wrapper for operations
  */
-export interface UnifiedResult<T> {
+export interface Result<T> {
   success: boolean;
   data?: T;
   error?: string;
-  /** Platform-specific raw response */
+  /** Platform raw response */
   raw?: unknown;
 }
 
@@ -39,24 +39,20 @@ export interface PaginationOptions {
 }
 
 // ============================================================================
-// Invite Link Methods
+// Invite Link Types
 // ============================================================================
 
 /**
- * Unified invite link options
- *
- * Platform-specific behavior:
- * - Telegram: uses memberLimit, expireDate (unix timestamp), createsJoinRequest
- * - Discord: uses maxUses, maxAge (seconds), temporary, unique
+ * Invite link options
  */
-export interface UnifiedInviteOptions {
+export interface InviteOptions {
   /** Maximum number of uses (null = unlimited) */
   maxUses?: number;
   /** Expiration time in seconds from now (null = never expires) */
   expiresInSeconds?: number;
   /** Name/label for this invite */
   name?: string;
-  /** Reason for audit log (Discord) */
+  /** Reason for audit log */
   reason?: string;
 
   /** Platform-specific extensions */
@@ -73,9 +69,9 @@ export interface UnifiedInviteOptions {
 }
 
 /**
- * Unified invite link result
+ * Invite link result
  */
-export interface UnifiedInviteResult {
+export interface InviteResult {
   /** The invite link/URL */
   url: string;
   /** Invite code (extracted from URL or native code) */
@@ -93,61 +89,21 @@ export interface UnifiedInviteResult {
   /** Whether this is the primary invite */
   isPrimary?: boolean;
 
-  /** Platform-specific data */
+  /** Platform raw data */
   raw?: unknown;
 }
 
-/**
- * Unified invite methods interface
- */
-export interface UnifiedInviteMethods {
-  /**
-   * Create a new invite link
-   * @param chatId - Chat/channel ID (Telegram) or channel ID (Discord)
-   * @param options - Unified invite options
-   */
-  createInvite(
-    chatId: string,
-    options?: UnifiedInviteOptions
-  ): Promise<UnifiedInviteResult>;
-
-  /**
-   * Get all invites for a chat/channel
-   * @param chatId - Chat/channel ID
-   */
-  getInvites(
-    chatId: string,
-    options?: PaginationOptions
-  ): Promise<UnifiedInviteResult[]>;
-
-  /**
-   * Revoke/delete an invite
-   * @param chatId - Chat/channel ID
-   * @param inviteCode - Invite code or URL to revoke
-   */
-  revokeInvite(
-    chatId: string,
-    inviteCode: string
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Export primary invite link (gets or creates default invite)
-   * @param chatId - Chat/channel ID
-   */
-  exportInvite(chatId: string): Promise<string>;
-}
-
 // ============================================================================
-// Pin Message Methods
+// Pin Message Types
 // ============================================================================
 
 /**
- * Unified pin message options
+ * Pin message options
  */
-export interface UnifiedPinOptions {
+export interface PinOptions {
   /** Whether to disable notification (silent pin) */
   silent?: boolean;
-  /** Reason for pin (for platforms that support it) */
+  /** Reason for pin */
   reason?: string;
 
   /** Platform-specific extensions */
@@ -161,47 +117,14 @@ export interface UnifiedPinOptions {
   };
 }
 
-/**
- * Unified pin methods interface
- */
-export interface UnifiedPinMethods {
-  /**
-   * Pin a message
-   * @param chatId - Chat/channel ID
-   * @param messageId - Message ID to pin
-   * @param options - Pin options
-   */
-  pinMessage(
-    chatId: string,
-    messageId: string,
-    options?: UnifiedPinOptions
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Unpin a message
-   * @param chatId - Chat/channel ID
-   * @param messageId - Message ID to unpin
-   */
-  unpinMessage(
-    chatId: string,
-    messageId: string
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Get all pinned messages
-   * @param chatId - Chat/channel ID
-   */
-  getPinnedMessages(chatId: string): Promise<string[]>;
-}
-
 // ============================================================================
-// Member Methods
+// Member Types
 // ============================================================================
 
 /**
- * Unified member information
+ * Member information
  */
-export interface UnifiedMemberInfo {
+export interface MemberInfo {
   /** User ID */
   id: string;
   /** Display name */
@@ -221,52 +144,18 @@ export interface UnifiedMemberInfo {
   /** Custom title (for admins) */
   customTitle?: string;
 
-  /** Platform-specific data */
+  /** Platform raw data */
   raw?: unknown;
 }
 
-/**
- * Unified member methods interface
- */
-export interface UnifiedMemberMethods {
-  /**
-   * Get member information
-   * @param chatId - Chat/server/guild ID
-   * @param userId - User ID
-   */
-  getMember(chatId: string, userId: string): Promise<UnifiedMemberInfo>;
-
-  /**
-   * Get member count for a chat
-   * @param chatId - Chat/server ID
-   */
-  getMemberCount(chatId: string): Promise<number>;
-
-  /**
-   * Get administrators of a chat
-   * @param chatId - Chat/server ID
-   */
-  getAdministrators(chatId: string): Promise<UnifiedMemberInfo[]>;
-
-  /**
-   * Get all members (if supported)
-   * @param chatId - Chat/server ID
-   * @param options - Pagination options
-   */
-  getMembers?(
-    chatId: string,
-    options?: PaginationOptions
-  ): Promise<UnifiedMemberInfo[]>;
-}
-
 // ============================================================================
-// Moderation Methods
+// Moderation Types
 // ============================================================================
 
 /**
- * Unified moderation options
+ * Moderation options
  */
-export interface UnifiedModerationOptions {
+export interface ModerationOptions {
   /** Reason for the action (for audit log) */
   reason?: string;
   /** Duration in seconds (for temporary actions like mute/timeout) */
@@ -288,9 +177,9 @@ export interface UnifiedModerationOptions {
 }
 
 /**
- * Unified mute/timeout options
+ * Mute/timeout options
  */
-export interface UnifiedMuteOptions {
+export interface MuteOptions {
   /** Duration in seconds */
   durationSeconds: number;
   /** Reason for the action */
@@ -298,7 +187,7 @@ export interface UnifiedMuteOptions {
 
   /** Platform-specific extensions */
   telegram?: {
-    /** Custom permissions to restrict (Telegram granular permissions) */
+    /** Custom permissions to restrict */
     permissions?: {
       canSendMessages?: boolean;
       canSendMedia?: boolean;
@@ -316,77 +205,14 @@ export interface UnifiedMuteOptions {
   };
 }
 
-/**
- * Unified moderation methods interface
- */
-export interface UnifiedModerationMethods {
-  /**
-   * Kick a user from chat/server
-   * @param chatId - Chat/server ID
-   * @param userId - User ID to kick
-   * @param options - Moderation options
-   */
-  kick(
-    chatId: string,
-    userId: string,
-    options?: UnifiedModerationOptions
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Ban a user from chat/server
-   * @param chatId - Chat/server ID
-   * @param userId - User ID to ban
-   * @param options - Moderation options
-   */
-  ban(
-    chatId: string,
-    userId: string,
-    options?: UnifiedModerationOptions
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Unban a user
-   * @param chatId - Chat/server ID
-   * @param userId - User ID to unban
-   * @param options - Moderation options
-   */
-  unban(
-    chatId: string,
-    userId: string,
-    options?: UnifiedModerationOptions
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Mute/timeout a user (temporary restriction)
-   * @param chatId - Chat/server ID
-   * @param userId - User ID to mute
-   * @param options - Mute options
-   */
-  mute(
-    chatId: string,
-    userId: string,
-    options: UnifiedMuteOptions
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Unmute/remove timeout from a user
-   * @param chatId - Chat/server ID
-   * @param userId - User ID to unmute
-   */
-  unmute(
-    chatId: string,
-    userId: string
-  ): Promise<UnifiedResult<void>>;
-}
-
 // ============================================================================
-// Chat Settings Methods
+// Chat Settings Types
 // ============================================================================
 
 /**
- * Unified chat settings options
+ * Chat settings options
  */
-export interface UnifiedChatSettingsOptions {
+export interface ChatSettingsOptions {
   /** New title/name for the chat */
   title?: string;
   /** New description/topic for the chat */
@@ -407,86 +233,12 @@ export interface UnifiedChatSettingsOptions {
   };
 }
 
-/**
- * Unified chat settings methods interface
- */
-export interface UnifiedChatSettingsMethods {
-  /**
-   * Set chat title
-   * @param chatId - Chat/channel ID
-   * @param title - New title
-   */
-  setTitle(chatId: string, title: string): Promise<UnifiedResult<void>>;
-
-  /**
-   * Set chat description
-   * @param chatId - Chat/channel ID
-   * @param description - New description (empty string to clear)
-   */
-  setDescription(
-    chatId: string,
-    description: string
-  ): Promise<UnifiedResult<void>>;
-
-  /**
-   * Update multiple chat settings
-   * @param chatId - Chat/channel ID
-   * @param options - Settings to update
-   */
-  updateSettings(
-    chatId: string,
-    options: UnifiedChatSettingsOptions
-  ): Promise<UnifiedResult<void>>;
-}
-
 // ============================================================================
-// DM Channel Methods
+// Platform Feature Detection
 // ============================================================================
 
 /**
- * Unified DM methods interface
- */
-export interface UnifiedDMMethods {
-  /**
-   * Create or get DM channel with a user
-   * @param userId - User ID to create DM with
-   * @returns DM channel ID
-   */
-  createDMChannel(userId: string): Promise<string>;
-
-  /**
-   * Close/delete DM channel
-   * @param channelId - DM channel ID
-   */
-  closeDMChannel?(channelId: string): Promise<UnifiedResult<void>>;
-}
-
-// ============================================================================
-// Combined Unified Adapter Interface
-// ============================================================================
-
-/**
- * Complete unified adapter interface combining all method categories
- */
-export interface UnifiedAdapterMethods
-  extends UnifiedInviteMethods,
-          UnifiedPinMethods,
-          UnifiedMemberMethods,
-          UnifiedModerationMethods,
-          UnifiedChatSettingsMethods,
-          UnifiedDMMethods {
-  /**
-   * Get the platform identifier
-   */
-  getPlatform(): Platform;
-}
-
-// ============================================================================
-// Platform-Specific Feature Detection
-// ============================================================================
-
-/**
- * Feature support flags for platform-specific features
+ * Feature support flags
  */
 export interface PlatformFeatureSupport {
   /** Invite features */
@@ -495,9 +247,7 @@ export interface PlatformFeatureSupport {
     list: boolean;
     revoke: boolean;
     export: boolean;
-    /** Platform supports named invites */
     namedInvites: boolean;
-    /** Platform supports temporary invites */
     temporaryInvites: boolean;
   };
 
@@ -506,7 +256,6 @@ export interface PlatformFeatureSupport {
     pin: boolean;
     unpin: boolean;
     list: boolean;
-    /** Platform supports silent pin */
     silentPin: boolean;
   };
 
@@ -525,9 +274,7 @@ export interface PlatformFeatureSupport {
     unban: boolean;
     mute: boolean;
     unmute: boolean;
-    /** Platform supports granular mute permissions */
     granularMute: boolean;
-    /** Platform supports message deletion on ban */
     deleteOnBan: boolean;
   };
 
@@ -594,37 +341,15 @@ export function getDefaultFeatureSupport(): PlatformFeatureSupport {
 }
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (internal use)
 // ============================================================================
 
 /**
- * Convert Discord invite options to unified format
+ * Convert invite options to Discord format
+ * @internal
  */
-export function discordInviteToUnified(
-  options: {
-    maxAge?: number;
-    maxUses?: number;
-    temporary?: boolean;
-    unique?: boolean;
-    reason?: string;
-  } = {}
-): UnifiedInviteOptions {
-  return {
-    maxUses: options.maxUses,
-    expiresInSeconds: options.maxAge,
-    reason: options.reason,
-    discord: {
-      temporary: options.temporary,
-      unique: options.unique,
-    },
-  };
-}
-
-/**
- * Convert unified invite options to Discord format
- */
-export function unifiedInviteToDiscord(
-  options: UnifiedInviteOptions = {}
+export function inviteOptionsToDiscord(
+  options: InviteOptions = {}
 ): {
   maxAge?: number;
   maxUses?: number;
@@ -642,32 +367,11 @@ export function unifiedInviteToDiscord(
 }
 
 /**
- * Convert Telegram invite options to unified format
+ * Convert invite options to Telegram format
+ * @internal
  */
-export function telegramInviteToUnified(
-  options: {
-    name?: string;
-    expireDate?: number;
-    memberLimit?: number;
-    createsJoinRequest?: boolean;
-  } = {}
-): UnifiedInviteOptions {
-  const now = Math.floor(Date.now() / 1000);
-  return {
-    name: options.name,
-    maxUses: options.memberLimit,
-    expiresInSeconds: options.expireDate ? options.expireDate - now : undefined,
-    telegram: {
-      createsJoinRequest: options.createsJoinRequest,
-    },
-  };
-}
-
-/**
- * Convert unified invite options to Telegram format
- */
-export function unifiedInviteToTelegram(
-  options: UnifiedInviteOptions = {}
+export function inviteOptionsToTelegram(
+  options: InviteOptions = {}
 ): {
   name?: string;
   expireDate?: number;
@@ -681,19 +385,4 @@ export function unifiedInviteToTelegram(
     expireDate: options.expiresInSeconds ? now + options.expiresInSeconds : undefined,
     createsJoinRequest: options.telegram?.createsJoinRequest,
   };
-}
-
-/**
- * Convert Discord duration to seconds
- * Discord uses milliseconds for timeout
- */
-export function discordDurationToSeconds(durationMs: number): number {
-  return Math.floor(durationMs / 1000);
-}
-
-/**
- * Convert seconds to Discord duration (milliseconds)
- */
-export function secondsToDiscordDuration(seconds: number): number {
-  return seconds * 1000;
 }

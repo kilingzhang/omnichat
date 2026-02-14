@@ -9,6 +9,7 @@ declare global {
 // Mock factory - creates fresh mock bot instances
 const createMockBot = () => ({
   on: vi.fn(),
+  off: vi.fn(),
   setWebHook: vi.fn(),
   stopPolling: vi.fn(),
   sendMessage: vi.fn(),
@@ -138,7 +139,7 @@ describe("TelegramAdapter", () => {
       // Discovery capabilities
       expect(caps.discovery.history).toBe(false);
       expect(caps.discovery.search).toBe(false);
-      expect(caps.discovery.pins).toBe(false);
+      expect(caps.discovery.pins).toBe(true);  // pinMessage and unpinMessage are supported
       expect(caps.discovery.memberInfo).toBe(true);
       expect(caps.discovery.channelInfo).toBe(true);
 
@@ -147,7 +148,7 @@ describe("TelegramAdapter", () => {
       expect(caps.management.ban).toBe(true);
       expect(caps.management.timeout).toBe(false);
       expect(caps.management.channelCreate).toBe(false);
-      expect(caps.management.channelEdit).toBe(false);
+      expect(caps.management.channelEdit).toBe(true);  // setChatTitle, setChatDescription supported
       expect(caps.management.channelDelete).toBe(false);
       expect(caps.management.permissions).toBe(true);
     });
@@ -1093,6 +1094,887 @@ describe("TelegramAdapter", () => {
         await expect(uninitializedAdapter.leaveChat("@test")).rejects.toThrow(
           "Telegram bot not initialized"
         );
+      });
+    });
+  });
+
+  describe("Core Messaging Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("send", () => {
+      it("should send text message successfully", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 123,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.send("-100123456789", { text: "Hello World" });
+
+        expect(result.messageId).toBe("-100123456789:123");
+        expect(result.platform).toBe("telegram");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith("-100123456789", "Hello World", expect.any(Object));
+      });
+
+      it("should send photo with caption", async () => {
+        mockBotInstance.sendPhoto.mockResolvedValue({
+          message_id: 456,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.send("-100123456789", {
+          text: "Photo caption",
+          mediaUrl: "https://example.com/photo.jpg",
+          mediaType: "image",
+        });
+
+        expect(result.messageId).toBe("-100123456789:456");
+        expect(mockBotInstance.sendPhoto).toHaveBeenCalledWith(
+          "-100123456789",
+          "https://example.com/photo.jpg",
+          expect.objectContaining({ caption: "Photo caption" })
+        );
+      });
+
+      it("should send video with caption", async () => {
+        mockBotInstance.sendVideo.mockResolvedValue({
+          message_id: 789,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.send("-100123456789", {
+          text: "Video caption",
+          mediaUrl: "https://example.com/video.mp4",
+          mediaType: "video",
+        });
+
+        expect(result.messageId).toBe("-100123456789:789");
+        expect(mockBotInstance.sendVideo).toHaveBeenCalled();
+      });
+
+      it("should send audio file", async () => {
+        mockBotInstance.sendAudio.mockResolvedValue({
+          message_id: 111,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", {
+          text: "Audio caption",
+          mediaUrl: "https://example.com/audio.mp3",
+          mediaType: "audio",
+        });
+
+        expect(mockBotInstance.sendAudio).toHaveBeenCalled();
+      });
+
+      it("should send document/file", async () => {
+        mockBotInstance.sendDocument.mockResolvedValue({
+          message_id: 222,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", {
+          text: "File caption",
+          mediaUrl: "https://example.com/file.pdf",
+          mediaType: "file",
+        });
+
+        expect(mockBotInstance.sendDocument).toHaveBeenCalled();
+      });
+
+      it("should send sticker", async () => {
+        mockBotInstance.sendSticker.mockResolvedValue({
+          message_id: 333,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { stickerId: "CAADBAADmgMAAqKcYAAB" });
+
+        expect(mockBotInstance.sendSticker).toHaveBeenCalledWith("-100123456789", "CAADBAADmgMAAqKcYAAB", expect.any(Object));
+      });
+
+      it("should send buttons with text", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 444,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", {
+          text: "Choose an option",
+          buttons: [
+            [{ text: "Option 1", data: "opt1" }],
+            [{ text: "Option 2", data: "opt2" }],
+          ],
+        });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Choose an option",
+          expect.objectContaining({
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Option 1", callback_data: "opt1" }],
+                [{ text: "Option 2", callback_data: "opt2" }],
+              ],
+            },
+          })
+        );
+      });
+
+      it("should send poll via send method", async () => {
+        mockBotInstance.sendPoll.mockResolvedValue({
+          message_id: 555,
+          date: Math.floor(Date.now() / 1000),
+          poll: { id: "poll123" },
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.send("-100123456789", {
+          poll: {
+            question: "What do you prefer?",
+            options: ["Option A", "Option B"],
+            multi: false,
+          },
+        });
+
+        expect(result.messageId).toBe("-100123456789:555");
+        expect(mockBotInstance.sendPoll).toHaveBeenCalled();
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.send("-100123456789", { text: "test" })).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+
+      it("should throw error when target is empty", async () => {
+        await expect(adapter.send("", { text: "test" })).rejects.toThrow("Target");
+      });
+
+      it("should throw error when no content provided", async () => {
+        await expect(adapter.send("-100123456789", {})).rejects.toThrow(
+          "Either text, mediaUrl, stickerId, buttons, or poll is required"
+        );
+      });
+
+      it("should handle reply to message", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 666,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { text: "Reply" }, { replyToMessageId: "123" });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Reply",
+          expect.objectContaining({ reply_to_message_id: 123 })
+        );
+      });
+
+      it("should handle reply with compound messageId format", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 777,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { text: "Reply" }, { replyToMessageId: "-100123456789:456" });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Reply",
+          expect.objectContaining({ reply_to_message_id: 456 })
+        );
+      });
+
+      it("should handle thread option for forum topics", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 888,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { text: "Topic message" }, { threadId: "42" });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Topic message",
+          expect.objectContaining({ message_thread_id: 42 })
+        );
+      });
+
+      it("should handle silent option", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 999,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { text: "Silent message" }, { silent: true });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Silent message",
+          expect.objectContaining({ disable_notification: true })
+        );
+      });
+
+      it("should handle parseMode option", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 101,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.send("-100123456789", { text: "**bold**" }, { parseMode: "markdown" });
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "**bold**",
+          expect.objectContaining({ parse_mode: "Markdown" })
+        );
+      });
+    });
+
+    describe("reply", () => {
+      it("should reply to message successfully", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 200,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.reply("-100123456789:100", { text: "Reply text" });
+
+        expect(result.messageId).toBe("-100123456789:200");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith(
+          "-100123456789",
+          "Reply text",
+          expect.objectContaining({ reply_to_message_id: 100 })
+        );
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.reply("invalid", { text: "test" })).rejects.toThrow("Invalid messageId format");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.reply("-100123456789:100", { text: "test" })).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("edit", () => {
+      it("should edit message successfully", async () => {
+        mockBotInstance.editMessageText.mockResolvedValue({
+          message_id: 100,
+          date: Math.floor(Date.now() / 1000),
+        });
+
+        const result = await adapter.edit("-100123456789:100", "Edited text");
+
+        expect(result.messageId).toBe("-100123456789:100");
+        expect(mockBotInstance.editMessageText).toHaveBeenCalledWith("-100123456789", 100, "Edited text", expect.any(Object));
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.edit("invalid", "new text")).rejects.toThrow("Invalid messageId format");
+      });
+
+      it("should throw error when newText is empty", async () => {
+        await expect(adapter.edit("-100123456789:100", "")).rejects.toThrow("New text is required");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.edit("-100123456789:100", "new text")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("delete", () => {
+      it("should delete message successfully", async () => {
+        mockBotInstance.deleteMessage.mockResolvedValue(true);
+
+        await adapter.delete("-100123456789:100");
+
+        expect(mockBotInstance.deleteMessage).toHaveBeenCalledWith("-100123456789", 100);
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.delete("invalid")).rejects.toThrow("Invalid messageId format");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.delete("-100123456789:100")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("sendButtons", () => {
+      it("should send buttons message", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 300,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.sendButtons(
+          "-100123456789",
+          "Choose:",
+          [[{ text: "Yes", data: "yes" }, { text: "No", data: "no" }]]
+        );
+
+        expect(result.messageId).toBe("-100123456789:300");
+      });
+    });
+
+    describe("sendPoll", () => {
+      it("should send poll successfully", async () => {
+        mockBotInstance.sendPoll.mockResolvedValue({
+          message_id: 400,
+          date: Math.floor(Date.now() / 1000),
+          poll: { id: "poll456" },
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.sendPoll("-100123456789", {
+          question: "Question?",
+          options: ["A", "B", "C"],
+          multi: true,
+        });
+
+        expect(result.pollId).toBe("poll456");
+        expect(result.messageId).toBe("-100123456789:400");
+      });
+
+      it("should throw error when question is missing", async () => {
+        await expect(adapter.sendPoll("-100123456789", { options: ["A", "B"] } as any)).rejects.toThrow(
+          "Poll must have a question"
+        );
+      });
+
+      it("should throw error when less than 2 options", async () => {
+        await expect(adapter.sendPoll("-100123456789", { question: "Q?", options: ["A"] })).rejects.toThrow(
+          "at least 2 options"
+        );
+      });
+
+      it("should throw error when more than 10 options", async () => {
+        await expect(
+          adapter.sendPoll("-100123456789", { question: "Q?", options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"] })
+        ).rejects.toThrow("at most 10 options");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.sendPoll("-100123456789", { question: "Q?", options: ["A", "B"] })
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("answerCallbackQuery", () => {
+      it("should answer callback query successfully", async () => {
+        mockBotInstance.answerCallbackQuery.mockResolvedValue(true);
+
+        await adapter.answerCallbackQuery("query123", { text: "Done!", showAlert: true });
+
+        expect(mockBotInstance.answerCallbackQuery).toHaveBeenCalledWith("query123", {
+          text: "Done!",
+          show_alert: true,
+        });
+      });
+
+      it("should answer without options", async () => {
+        mockBotInstance.answerCallbackQuery.mockResolvedValue(true);
+
+        await adapter.answerCallbackQuery("query123");
+
+        expect(mockBotInstance.answerCallbackQuery).toHaveBeenCalledWith("query123", {
+          text: undefined,
+          show_alert: false,
+        });
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.answerCallbackQuery("query123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("addReaction", () => {
+      it("should add reaction successfully", async () => {
+        mockBotInstance.setMessageReaction.mockResolvedValue(true);
+
+        await adapter.addReaction("-100123456789:100", "👍");
+
+        expect(mockBotInstance.setMessageReaction).toHaveBeenCalledWith("-100123456789", 100, [
+          { type: "emoji", emoji: "👍" },
+        ]);
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.addReaction("invalid", "👍")).rejects.toThrow("Invalid messageId format");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.addReaction("-100123456789:100", "👍")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("removeReaction", () => {
+      it("should remove reaction successfully", async () => {
+        mockBotInstance.setMessageReaction.mockResolvedValue(true);
+
+        await adapter.removeReaction("-100123456789:100", "👍");
+
+        expect(mockBotInstance.setMessageReaction).toHaveBeenCalledWith("-100123456789", 100, []);
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.removeReaction("invalid", "👍")).rejects.toThrow("Invalid messageId format");
+      });
+    });
+
+    describe("sendSticker", () => {
+      it("should send sticker successfully", async () => {
+        mockBotInstance.sendSticker.mockResolvedValue({
+          message_id: 500,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.sendSticker("-100123456789", "CAADBAADmgMAAqKcYAAB");
+
+        expect(result.messageId).toBe("-100123456789:500");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.sendSticker("-100123456789", "sticker123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("sendWithEffect", () => {
+      it("should send message with effect successfully", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 600,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.sendWithEffect("-100123456789", "Hello!", "effect123");
+
+        expect(result.messageId).toBe("-100123456789:600");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith("-100123456789", {
+          text: "Hello!",
+          effect_id: "effect123",
+        });
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.sendWithEffect("-100123456789", "Hello!", "effect123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("setCommands", () => {
+      it("should set bot commands successfully", async () => {
+        mockBotInstance.setMyCommands.mockResolvedValue(true);
+
+        await adapter.setCommands([
+          { command: "start", description: "Start the bot" },
+          { command: "help", description: "Show help" },
+        ]);
+
+        expect(mockBotInstance.setMyCommands).toHaveBeenCalledWith([
+          { command: "start", description: "Start the bot" },
+          { command: "help", description: "Show help" },
+        ]);
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.setCommands([])).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("sendChatAction", () => {
+      it("should send chat action successfully", async () => {
+        mockBotInstance.sendChatAction.mockResolvedValue(true);
+
+        await adapter.sendChatAction("-100123456789", "typing");
+
+        expect(mockBotInstance.sendChatAction).toHaveBeenCalledWith("-100123456789", "typing");
+      });
+
+      it("should throw error when target is empty", async () => {
+        await expect(adapter.sendChatAction("", "typing")).rejects.toThrow("Target");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.sendChatAction("-100123456789", "typing")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("sendWithKeyboard", () => {
+      it("should send message with keyboard successfully", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 700,
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.sendWithKeyboard("-100123456789", "Choose:", {
+          keyboard: [[{ text: "Option 1" }, { text: "Option 2" }]],
+          resize: true,
+          oneTime: true,
+        });
+
+        expect(result.messageId).toBe("-100123456789:700");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith("-100123456789", "Choose:", {
+          reply_markup: {
+            keyboard: [[{ text: "Option 1" }, { text: "Option 2" }]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+            selective: false,
+          },
+        });
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(
+          uninitializedAdapter.sendWithKeyboard("-100123456789", "test", { keyboard: [] })
+        ).rejects.toThrow("Telegram bot not initialized");
+      });
+    });
+
+    describe("hideKeyboard", () => {
+      it("should hide keyboard successfully", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 800,
+          chat: { id: -100123456789 },
+        });
+
+        const result = await adapter.hideKeyboard("-100123456789", "Keyboard hidden");
+
+        expect(result.messageId).toBe("-100123456789:800");
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith("-100123456789", "Keyboard hidden", {
+          reply_markup: {
+            remove_keyboard: true,
+            selective: false,
+          },
+        });
+      });
+
+      it("should use default text when not provided", async () => {
+        mockBotInstance.sendMessage.mockResolvedValue({
+          message_id: 801,
+          chat: { id: -100123456789 },
+        });
+
+        await adapter.hideKeyboard("-100123456789");
+
+        expect(mockBotInstance.sendMessage).toHaveBeenCalledWith("-100123456789", "键盘已隐藏", expect.any(Object));
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.hideKeyboard("-100123456789")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("forwardMessage", () => {
+      it("should forward message successfully", async () => {
+        mockBotInstance.forwardMessage.mockResolvedValue({
+          message_id: 900,
+          date: Math.floor(Date.now() / 1000),
+          chat: { id: -100999999999 },
+        });
+
+        const result = await adapter.forwardMessage("-100999999999", "-100123456789:100");
+
+        expect(result.messageId).toBe("-100999999999:900");
+        expect(mockBotInstance.forwardMessage).toHaveBeenCalledWith("-100999999999", "-100123456789", 100);
+      });
+
+      it("should throw error for invalid messageId format", async () => {
+        await expect(adapter.forwardMessage("-100999999999", "invalid")).rejects.toThrow("Invalid messageId format");
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.forwardMessage("-100999999999", "-100123456789:100")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+
+    describe("downloadFileAsBuffer", () => {
+      it("should download file as buffer successfully", async () => {
+        mockBotInstance.getFileLink.mockResolvedValue("https://api.telegram.org/file/bot123/photos/file.jpg");
+
+        // Mock https.get
+        const mockChunk = Buffer.from("fake image data");
+        const originalGet = require("https").get;
+        require("https").get = vi.fn((url: string, callback: (res: any) => void) => {
+          const mockResponse = {
+            statusCode: 200,
+            on: (event: string, handler: (data?: any) => void) => {
+              if (event === "data") {
+                handler(mockChunk);
+              } else if (event === "end") {
+                handler();
+              }
+            },
+          };
+          callback(mockResponse);
+          return { on: vi.fn() };
+        });
+
+        const result = await adapter.downloadFileAsBuffer("file123");
+
+        expect(result).toBeInstanceOf(Buffer);
+
+        // Restore
+        require("https").get = originalGet;
+      });
+
+      it("should throw error when bot not initialized", async () => {
+        const uninitializedAdapter = new TelegramAdapter();
+        await expect(uninitializedAdapter.downloadFileAsBuffer("file123")).rejects.toThrow(
+          "Telegram bot not initialized"
+        );
+      });
+    });
+  });
+
+  describe("Unified API Methods", () => {
+    beforeEach(async () => {
+      await adapter.init({ apiToken: "test_token" });
+    });
+
+    describe("createInvite", () => {
+      it("should create invite link with options", async () => {
+        mockBotInstance.createChatInviteLink.mockResolvedValue({
+          invite_link: "https://t.me/+ABC123",
+          creator: { id: 123, first_name: "Bot" },
+          member_limit: 50,
+          is_primary: false,
+        });
+
+        const result = await adapter.createInvite("-100123456789", {
+          name: "Test Invite",
+          maxUses: 50,
+        });
+
+        expect(result.url).toBe("https://t.me/+ABC123");
+        expect(result.maxUses).toBe(50);
+      });
+    });
+
+    describe("getInvites", () => {
+      it("should get primary invite link", async () => {
+        mockBotInstance.exportChatInviteLink.mockResolvedValue("https://t.me/+XYZ789");
+
+        const result = await adapter.getInvites("-100123456789");
+
+        expect(result).toHaveLength(1);
+        expect(result[0].url).toBe("https://t.me/+XYZ789");
+        expect(result[0].isPrimary).toBe(true);
+      });
+
+      it("should return empty array on error", async () => {
+        mockBotInstance.exportChatInviteLink.mockRejectedValue(new Error("No permission"));
+
+        const result = await adapter.getInvites("-100123456789");
+
+        expect(result).toEqual([]);
+      });
+    });
+
+    describe("revokeInvite", () => {
+      it("should revoke invite link", async () => {
+        mockBotInstance.revokeChatInviteLink.mockResolvedValue({
+          invite_link: "https://t.me/+ABC123",
+          is_revoked: true,
+        });
+
+        const result = await adapter.revokeInvite("-100123456789", "ABC123");
+
+        expect(result.success).toBe(true);
+      });
+
+      it("should return failure on error", async () => {
+        mockBotInstance.revokeChatInviteLink.mockRejectedValue(new Error("Cannot revoke"));
+
+        const result = await adapter.revokeInvite("-100123456789", "ABC123");
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe("Cannot revoke");
+      });
+    });
+
+    describe("pinMessage / unpinMessage", () => {
+      it("should pin message", async () => {
+        mockBotInstance.pinChatMessage.mockResolvedValue(true);
+
+        const result = await adapter.pinMessage("-100123456789", "100", { silent: true });
+
+        expect(result.success).toBe(true);
+      });
+
+      it("should unpin message", async () => {
+        mockBotInstance.unpinChatMessage.mockResolvedValue(true);
+
+        const result = await adapter.unpinMessage("-100123456789", "100");
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe("getMemberInfo", () => {
+      it("should get member info", async () => {
+        mockBotInstance.getChatMember.mockResolvedValue({
+          user: { id: 123, first_name: "Alice", username: "alice" },
+          status: "member",
+        });
+
+        const result = await adapter.getMemberInfo("-100123456789", "123");
+
+        expect(result.id).toBe("123");
+        expect(result.name).toBe("Alice");
+      });
+    });
+
+    describe("getMemberCount", () => {
+      it("should get member count", async () => {
+        mockBotInstance.getChatMemberCount.mockResolvedValue(150);
+
+        const result = await adapter.getMemberCount("-100123456789");
+
+        expect(result).toBe(150);
+      });
+    });
+
+    describe("getAdministrators", () => {
+      it("should get administrators", async () => {
+        mockBotInstance.getChatAdministrators.mockResolvedValue([
+          { status: "creator", user: { id: 111, first_name: "Owner" } },
+          { status: "administrator", user: { id: 222, first_name: "Admin" } },
+        ]);
+
+        const result = await adapter.getAdministrators("-100123456789");
+
+        expect(result).toHaveLength(2);
+        expect(result[0].roles).toContain("owner");
+        expect(result[1].isAdmin).toBe(true);
+      });
+    });
+
+    describe("kick", () => {
+      it("should kick user", async () => {
+        mockBotInstance.banChatMember.mockResolvedValue(true);
+        mockBotInstance.unbanChatMember.mockResolvedValue(true);
+
+        const result = await adapter.kick("-100123456789", "123");
+
+        expect(result.success).toBe(true);
+        expect(mockBotInstance.banChatMember).toHaveBeenCalled();
+        expect(mockBotInstance.unbanChatMember).toHaveBeenCalled();
+      });
+    });
+
+    describe("ban / unban", () => {
+      it("should ban user", async () => {
+        mockBotInstance.banChatMember.mockResolvedValue(true);
+
+        const result = await adapter.ban("-100123456789", "123");
+
+        expect(result.success).toBe(true);
+      });
+
+      it("should unban user", async () => {
+        mockBotInstance.unbanChatMember.mockResolvedValue(true);
+
+        const result = await adapter.unban("-100123456789", "123");
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe("mute / unmute", () => {
+      it("should mute user", async () => {
+        mockBotInstance.restrictChatMember.mockResolvedValue(true);
+
+        const result = await adapter.mute("-100123456789", "123", { durationSeconds: 3600 });
+
+        expect(result.success).toBe(true);
+      });
+
+      it("should unmute user", async () => {
+        mockBotInstance.restrictChatMember.mockResolvedValue(true);
+
+        const result = await adapter.unmute("-100123456789", "123");
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe("setTitle / setDescription", () => {
+      it("should set title", async () => {
+        mockBotInstance.setChatTitle.mockResolvedValue(true);
+
+        const result = await adapter.setTitle("-100123456789", "New Title");
+
+        expect(result.success).toBe(true);
+      });
+
+      it("should set description", async () => {
+        mockBotInstance.setChatDescription.mockResolvedValue(true);
+
+        const result = await adapter.setDescription("-100123456789", "New Description");
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe("createDMChannel", () => {
+      it("should return user ID as channel", async () => {
+        const result = await adapter.createDMChannel("123456789");
+
+        expect(result).toBe("123456789");
       });
     });
   });

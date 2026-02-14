@@ -14,13 +14,13 @@ import type {
   PlatformSpecificOptions,
 } from "../models/universal-features.js";
 import type {
-  UnifiedInviteOptions,
-  UnifiedInviteResult,
-  UnifiedPinOptions,
-  UnifiedResult,
-  UnifiedMemberInfo,
-  UnifiedModerationOptions,
-  UnifiedMuteOptions,
+  InviteOptions,
+  InviteResult,
+  PinOptions,
+  Result,
+  MemberInfo,
+  ModerationOptions,
+  MuteOptions,
 } from "../models/unified-adapter.js";
 import {
   AdapterNotFoundError,
@@ -60,7 +60,7 @@ export type MessageCallback = (message: Message) => void | Promise<void>;
 export type Middleware = (message: Message, next: () => Promise<void>) => Promise<void>;
 
 /**
- * Unified IM SDK
+ * IM SDK
  */
 export class SDK {
   private adapters: Map<string, FullAdapter> = new Map();
@@ -164,8 +164,13 @@ export class SDK {
 
   /**
    * Reply to a message
+   * @param platform - Platform identifier
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID to reply to
+   * @param content - Message content
+   * @param options - Optional send options
    */
-  async reply(platform: string, toMessageId: string, content: SendContent, options?: SendOptions): Promise<SendResult> {
+  async reply(platform: string, chatId: string, messageId: string, content: SendContent, options?: SendOptions): Promise<SendResult> {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -174,13 +179,18 @@ export class SDK {
       throw new CapabilityNotSupportedError(platform, "reply");
     }
 
-    return adapter.reply(toMessageId, content, options);
+    return adapter.reply(chatId, messageId, content, options);
   }
 
   /**
    * Edit a message
+   * @param platform - Platform identifier
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID to edit
+   * @param newText - New text content
+   * @param options - Optional send options
    */
-  async edit(platform: string, messageId: string, newText: string, options?: SendOptions): Promise<void> {
+  async edit(platform: string, chatId: string, messageId: string, newText: string, options?: SendOptions): Promise<SendResult> {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -189,13 +199,16 @@ export class SDK {
       throw new CapabilityNotSupportedError(platform, "edit");
     }
 
-    return adapter.edit(messageId, newText, options);
+    return adapter.edit(chatId, messageId, newText, options);
   }
 
   /**
    * Delete a message
+   * @param platform - Platform identifier
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID to delete
    */
-  async delete(platform: string, messageId: string): Promise<void> {
+  async delete(platform: string, chatId: string, messageId: string): Promise<void> {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -204,7 +217,7 @@ export class SDK {
       throw new CapabilityNotSupportedError(platform, "delete");
     }
 
-    return adapter.delete(messageId);
+    return adapter.delete(chatId, messageId);
   }
 
   /**
@@ -245,8 +258,12 @@ export class SDK {
 
   /**
    * Add a reaction
+   * @param platform - Platform identifier
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID
+   * @param emoji - Reaction emoji
    */
-  async addReaction(platform: string, messageId: string, emoji: string): Promise<void> {
+  async addReaction(platform: string, chatId: string, messageId: string, emoji: string): Promise<void> {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -255,13 +272,17 @@ export class SDK {
       throw new CapabilityNotSupportedError(platform, "reactions");
     }
 
-    return adapter.addReaction(messageId, emoji);
+    return adapter.addReaction(chatId, messageId, emoji);
   }
 
   /**
    * Remove a reaction
+   * @param platform - Platform identifier
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID
+   * @param emoji - Reaction emoji
    */
-  async removeReaction(platform: string, messageId: string, emoji: string): Promise<void> {
+  async removeReaction(platform: string, chatId: string, messageId: string, emoji: string): Promise<void> {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -270,7 +291,7 @@ export class SDK {
       throw new CapabilityNotSupportedError(platform, "reactions");
     }
 
-    return adapter.removeReaction(messageId, emoji);
+    return adapter.removeReaction(chatId, messageId, emoji);
   }
 
   /**
@@ -541,18 +562,18 @@ export class SDK {
   }
 
   // ============================================================================
-  // Group Management - Unified APIs
+  // Group Management
   // ============================================================================
 
   /**
    * Kick a user from a chat/group
    */
-  async kickUser(
+  async kick(
     platform: string,
     chatId: string,
     userId: string,
-    options?: UnifiedModerationOptions
-  ): Promise<UnifiedResult<void>> {
+    options?: ModerationOptions
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -562,18 +583,18 @@ export class SDK {
       return adapter.kick(chatId, userId, options);
     }
 
-    throw new CapabilityNotSupportedError(platform, "kickUser");
+    throw new CapabilityNotSupportedError(platform, "kick");
   }
 
   /**
    * Ban a user from a chat/group
    */
-  async banUser(
+  async ban(
     platform: string,
     chatId: string,
     userId: string,
-    options?: UnifiedModerationOptions
-  ): Promise<UnifiedResult<void>> {
+    options?: ModerationOptions
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -583,17 +604,17 @@ export class SDK {
       return adapter.ban(chatId, userId, options);
     }
 
-    throw new CapabilityNotSupportedError(platform, "banUser");
+    throw new CapabilityNotSupportedError(platform, "ban");
   }
 
   /**
    * Unban a user from a chat/group
    */
-  async unbanUser(
+  async unban(
     platform: string,
     chatId: string,
     userId: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -603,18 +624,18 @@ export class SDK {
       return adapter.unban(chatId, userId);
     }
 
-    throw new CapabilityNotSupportedError(platform, "unbanUser");
+    throw new CapabilityNotSupportedError(platform, "unban");
   }
 
   /**
    * Mute/timeout a user in a chat/group
    */
-  async muteUser(
+  async mute(
     platform: string,
     chatId: string,
     userId: string,
-    options: UnifiedMuteOptions
-  ): Promise<UnifiedResult<void>> {
+    options: MuteOptions
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -624,17 +645,17 @@ export class SDK {
       return adapter.mute(chatId, userId, options);
     }
 
-    throw new CapabilityNotSupportedError(platform, "muteUser");
+    throw new CapabilityNotSupportedError(platform, "mute");
   }
 
   /**
    * Unmute/remove timeout from a user
    */
-  async unmuteUser(
+  async unmute(
     platform: string,
     chatId: string,
     userId: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -644,11 +665,11 @@ export class SDK {
       return adapter.unmute(chatId, userId);
     }
 
-    throw new CapabilityNotSupportedError(platform, "unmuteUser");
+    throw new CapabilityNotSupportedError(platform, "unmute");
   }
 
   // ============================================================================
-  // Invite Management - Unified APIs
+  // Invite Management
   // ============================================================================
 
   /**
@@ -657,8 +678,8 @@ export class SDK {
   async createInvite(
     platform: string,
     chatId: string,
-    options?: UnifiedInviteOptions
-  ): Promise<UnifiedInviteResult> {
+    options?: InviteOptions
+  ): Promise<InviteResult> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -677,7 +698,7 @@ export class SDK {
   async getInvites(
     platform: string,
     chatId: string
-  ): Promise<UnifiedInviteResult[]> {
+  ): Promise<InviteResult[]> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -697,7 +718,7 @@ export class SDK {
     platform: string,
     chatId: string,
     inviteCode: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -733,7 +754,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // Message Pinning - Unified APIs
+  // Message Pinning
   // ============================================================================
 
   /**
@@ -743,8 +764,8 @@ export class SDK {
     platform: string,
     chatId: string,
     messageId: string,
-    options?: UnifiedPinOptions
-  ): Promise<UnifiedResult<void>> {
+    options?: PinOptions
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -764,7 +785,7 @@ export class SDK {
     platform: string,
     chatId: string,
     messageId: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -778,7 +799,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // Member Info - Unified APIs
+  // Member Info
   // ============================================================================
 
   /**
@@ -788,7 +809,7 @@ export class SDK {
     platform: string,
     chatId: string,
     userId: string
-  ): Promise<UnifiedMemberInfo> {
+  ): Promise<MemberInfo> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -823,7 +844,7 @@ export class SDK {
   async getAdministrators(
     platform: string,
     chatId: string
-  ): Promise<UnifiedMemberInfo[]> {
+  ): Promise<MemberInfo[]> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -837,7 +858,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // Chat Settings - Unified APIs
+  // Chat Settings
   // ============================================================================
 
   /**
@@ -847,7 +868,7 @@ export class SDK {
     platform: string,
     chatId: string,
     title: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -867,7 +888,7 @@ export class SDK {
     platform: string,
     chatId: string,
     description: string
-  ): Promise<UnifiedResult<void>> {
+  ): Promise<Result<void>> {
     const adapter = this.adapters.get(platform) as any;
     if (!adapter) {
       throw new AdapterNotFoundError(platform);
@@ -881,7 +902,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // Chat Actions & Callbacks - Unified APIs
+  // Chat Actions & Callbacks
   // ============================================================================
 
   /**
@@ -950,7 +971,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // DM Channel Management - Unified APIs
+  // DM Channel Management
   // ============================================================================
 
   /**
@@ -970,7 +991,7 @@ export class SDK {
   }
 
   // ============================================================================
-  // Guild/Server Info - Unified APIs
+  // Guild/Server Info
   // ============================================================================
 
   /**

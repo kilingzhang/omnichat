@@ -16,6 +16,11 @@ export type {
   PollResult,
   ChatAction,
 } from "./core/adapter.js";
+export {
+  BaseAdapter,
+  type EventHandlerRecord,
+  type AdapterConstructor,
+} from "./core/base-adapter.js";
 
 // Constants
 export {
@@ -80,7 +85,7 @@ export {
 } from "./errors/index.js";
 
 // Utils
-export { Logger, LogLevel } from "./utils/logger.js";
+export { Logger, LogLevel, setGlobalLogLevel, getGlobalLogLevel, getLoggerConfig } from "./utils/logger.js";
 export {
   parseMessageId,
   validateRequired,
@@ -90,6 +95,19 @@ export {
   formatError,
 } from "./utils/adapter-utils.js";
 export { SimpleCache, createCache } from "./utils/cache.js";
+export {
+  validateConfig,
+  validateWithSchema,
+  TelegramConfigSchema,
+  DiscordConfigSchema,
+  SlackConfigSchema,
+  WhatsAppConfigSchema,
+  SignalConfigSchema,
+  iMessageConfigSchema,
+  PlatformConfigSchemas,
+  type ConfigPlatform,
+  type InferConfigType,
+} from "./utils/config-validator.js";
 export {
   withRetry,
   delay,
@@ -182,32 +200,21 @@ export type {
   AdapterTransformation,
 } from "./models/universal-features.js";
 
-// Unified Adapter Types
+// Standard Types
 export type {
-  UnifiedResult,
+  Result,
   PaginationOptions,
-  UnifiedInviteOptions,
-  UnifiedInviteResult,
-  UnifiedInviteMethods,
-  UnifiedPinOptions,
-  UnifiedPinMethods,
-  UnifiedMemberInfo,
-  UnifiedMemberMethods,
-  UnifiedModerationOptions,
-  UnifiedMuteOptions,
-  UnifiedModerationMethods,
-  UnifiedChatSettingsOptions,
-  UnifiedChatSettingsMethods,
-  UnifiedDMMethods,
-  UnifiedAdapterMethods,
+  InviteOptions,
+  InviteResult,
+  PinOptions,
+  MemberInfo,
+  ModerationOptions,
+  MuteOptions,
+  ChatSettingsOptions,
   PlatformFeatureSupport,
 } from "./models/unified-adapter.js";
 export {
   getDefaultFeatureSupport,
-  discordInviteToUnified,
-  unifiedInviteToDiscord,
-  telegramInviteToUnified,
-  unifiedInviteToTelegram,
-  discordDurationToSeconds,
-  secondsToDiscordDuration,
+  inviteOptionsToDiscord,
+  inviteOptionsToTelegram,
 } from "./models/unified-adapter.js";

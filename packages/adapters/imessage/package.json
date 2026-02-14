@@ -1,7 +1,8 @@
 {
   "name": "@omnichat/imessage",
   "version": "0.1.0",
-  "description": "iMessage adapter for Universal IM SDK",
+  "description": "iMessage adapter for Universal IM SDK (EXPERIMENTAL - macOS only, limited functionality)",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

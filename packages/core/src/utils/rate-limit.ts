@@ -4,6 +4,10 @@
  * Provides tools for handling API rate limits and automatic retries.
  */
 
+import { Logger } from "./logger.js";
+
+const logger = new Logger("RateLimit");
+
 export interface RetryOptions {
   maxRetries?: number;
   baseDelay?: number;
@@ -99,7 +103,7 @@ export async function withRetry<T>(
       if (onRetry) {
         onRetry(attempt + 1, delayMs, error);
       } else {
-        console.warn(
+        logger.warn(
           `Rate limited. Retrying after ${Math.round(delayMs / 1000)}s... (attempt ${attempt + 1}/${maxRetries + 1})`
         );
       }

@@ -38,17 +38,21 @@ export interface BotInstanceConfig {
 
 export function loadConfig(): BotConfig {
   // Try multiple possible locations for .env file
-  // 1. Current directory (for production/compiled builds)
-  // 2. Parent directory (for development)
+  // Start from the current file and go up to find the root .env
   const currentDir = dirname(fileURLToPath(import.meta.url));
-  const parentDir = join(currentDir, "..");
-  const rootDir = join(parentDir, "..");
+  // src/bots/group-assistant -> src/bots -> src -> examples -> packages -> root
+  const srcDir = join(currentDir, "..", "..");      // go up to src/
+  const examplesDir = join(srcDir, "..");           // go up to examples/
+  const packagesDir = join(examplesDir, "..");      // go up to packages/
+  const rootDir = join(packagesDir, "..");          // go up to root
 
   let envContent = "";
 
   const possiblePaths = [
     join(currentDir, ".env"),
-    join(parentDir, ".env"),
+    join(srcDir, ".env"),
+    join(examplesDir, ".env"),
+    join(packagesDir, ".env"),
     join(rootDir, ".env"),
   ];
 

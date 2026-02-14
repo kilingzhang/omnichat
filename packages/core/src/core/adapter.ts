@@ -18,6 +18,16 @@ import type {
   BatchOperationResult,
 } from "../models/message.js";
 import type { Capabilities } from "../models/capabilities.js";
+import type {
+  Result,
+  InviteOptions,
+  InviteResult,
+  PinOptions,
+  MemberInfo,
+  ModerationOptions,
+  MuteOptions,
+  ChatSettingsOptions,
+} from "../models/unified-adapter.js";
 
 /**
  * Adapter configuration
@@ -86,18 +96,28 @@ export interface Adapter {
 export interface ConversationAdapter extends Adapter {
   /**
    * Edit a previously sent message
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID (pure numeric ID)
+   * @param newText - New text content
+   * @param options - Optional send options
    */
-  edit?(messageId: string, newText: string, options?: SendOptions): Promise<void>;
+  edit?(chatId: string, messageId: string, newText: string, options?: SendOptions): Promise<SendResult>;
 
   /**
    * Delete a message
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID (pure numeric ID)
    */
-  delete?(messageId: string): Promise<void>;
+  delete?(chatId: string, messageId: string): Promise<void>;
 
   /**
    * Reply to a specific message
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID to reply to (pure numeric ID)
+   * @param content - Message content
+   * @param options - Optional send options
    */
-  reply?(toMessageId: string, content: SendContent, options?: SendOptions): Promise<SendResult>;
+  reply?(chatId: string, messageId: string, content: SendContent, options?: SendOptions): Promise<SendResult>;
 }
 
 /**
@@ -142,13 +162,19 @@ export interface InteractionAdapter extends Adapter {
 
   /**
    * Add a reaction to a message
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID (pure numeric ID)
+   * @param emoji - Reaction emoji
    */
-  addReaction?(messageId: string, emoji: string): Promise<void>;
+  addReaction?(chatId: string, messageId: string, emoji: string): Promise<void>;
 
   /**
    * Remove a reaction from a message
+   * @param chatId - Chat/channel ID
+   * @param messageId - Message ID (pure numeric ID)
+   * @param emoji - Reaction emoji
    */
-  removeReaction?(messageId: string, emoji: string): Promise<void>;
+  removeReaction?(chatId: string, messageId: string, emoji: string): Promise<void>;
 
   /**
    * Send a sticker
@@ -178,13 +204,7 @@ export interface DiscoveryAdapter extends Adapter {
   /**
    * Get member information
    */
-  getMemberInfo?(userId: string): Promise<{
-    id: string;
-    name: string;
-    username?: string;
-    avatar?: string;
-    roles?: string[];
-  }>;
+  getMemberInfo?(chatId: string, userId: string): Promise<MemberInfo>;
 
   /**
    * Get channel information
@@ -203,19 +223,42 @@ export interface DiscoveryAdapter extends Adapter {
  */
 export interface ManagementAdapter extends Adapter {
   /**
-   * Kick a user from a channel
+   * Kick a user from a chat
+   * @param chatId - Chat/channel/guild ID
+   * @param userId - User ID to kick
+   * @param options - Optional moderation options
    */
-  kick?(channelId: string, userId: string, reason?: string): Promise<void>;
+  kick?(chatId: string, userId: string, options?: ModerationOptions): Promise<Result<void>>;
 
   /**
-   * Ban a user from a server
+   * Ban a user from a chat/server
+   * @param chatId - Chat/channel/guild ID
+   * @param userId - User ID to ban
+   * @param options - Optional moderation options (duration, reason)
    */
-  ban?(serverId: string, userId: string, reason?: string, duration?: number): Promise<void>;
+  ban?(chatId: string, userId: string, options?: ModerationOptions): Promise<Result<void>>;
 
   /**
-   * Timeout a user
+   * Unban a user
+   * @param chatId - Chat/channel/guild ID
+   * @param userId - User ID to unban
    */
-  timeout?(channelId: string, userId: string, duration: number): Promise<void>;
+  unban?(chatId: string, userId: string): Promise<Result<void>>;
+
+  /**
+   * Mute a user (timeout in Discord)
+   * @param chatId - Chat/channel/guild ID
+   * @param userId - User ID to mute
+   * @param options - Mute options (duration, reason)
+   */
+  mute?(chatId: string, userId: string, options: MuteOptions): Promise<Result<void>>;
+
+  /**
+   * Unmute a user
+   * @param chatId - Chat/channel/guild ID
+   * @param userId - User ID to unmute
+   */
+  unmute?(chatId: string, userId: string): Promise<Result<void>>;
 
   /**
    * Create a channel
@@ -244,21 +287,6 @@ export interface ManagementAdapter extends Adapter {
    * Promote user to administrator
    */
   promoteUser?(chatId: string, userId: string, rights: AdministratorRights): Promise<void>;
-
-  /**
-   * Ban user from chat
-   */
-  banChatUser?(chatId: string, userId: string, untilDate?: number): Promise<void>;
-
-  /**
-   * Unban user from chat
-   */
-  unbanChatUser?(chatId: string, userId: string): Promise<void>;
-
-  /**
-   * Kick user from chat
-   */
-  kickChatUser?(chatId: string, userId: string, untilDate?: number): Promise<void>;
 }
 
 /**
@@ -276,7 +304,52 @@ export interface AdvancedAdapter extends Adapter {
   answerInlineQuery?(queryId: string, results: any[], options?: { nextOffset?: string; switchPmText?: string; switchPmParameter?: string }): Promise<void>;
 
   /**
-   * Create deep link / invite link
+   * Create invite link
+   */
+  createInvite?(chatId: string, options?: InviteOptions): Promise<InviteResult>;
+
+  /**
+   * Get all invites
+   */
+  getInvites?(chatId: string): Promise<InviteResult[]>;
+
+  /**
+   * Revoke invite
+   */
+  revokeInvite?(chatId: string, inviteCode: string): Promise<Result<void>>;
+
+  /**
+   * Export invite link
+   */
+  exportInvite?(chatId: string): Promise<string>;
+
+  /**
+   * Pin message
+   */
+  pinMessage?(chatId: string, messageId: string, options?: PinOptions): Promise<Result<void>>;
+
+  /**
+   * Unpin message
+   */
+  unpinMessage?(chatId: string, messageId: string): Promise<Result<void>>;
+
+  /**
+   * Get administrators
+   */
+  getAdministrators?(chatId: string): Promise<MemberInfo[]>;
+
+  /**
+   * Set title
+   */
+  setTitle?(chatId: string, title: string): Promise<Result<void>>;
+
+  /**
+   * Set description
+   */
+  setDescription?(chatId: string, description: string): Promise<Result<void>>;
+
+  /**
+   * Create deep link / invite link (legacy)
    */
   createInviteLink?(chatId: string, options?: InviteLinkOptions): Promise<InviteLinkResult>;
 
@@ -291,7 +364,7 @@ export interface AdvancedAdapter extends Adapter {
   revokeInviteLink?(chatId: string, link: string): Promise<InviteLinkResult>;
 
   /**
-   * Export invite link
+   * Export invite link (legacy)
    */
   exportInviteLink?(chatId: string): Promise<string>;
 

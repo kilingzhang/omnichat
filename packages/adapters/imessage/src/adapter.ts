@@ -1,6 +1,7 @@
 import type { FullAdapter, AdapterConfig, SendContent, SendOptions, SendResult } from "@omnichat/core";
 import type { Message, MessageContent, Participant } from "@omnichat/core";
 import type { Capabilities } from "@omnichat/core";
+import { Logger } from "@omnichat/core";
 
 /**
  * iMessage adapter configuration
@@ -18,8 +19,10 @@ export class IMessageAdapter implements FullAdapter {
   private config?: IMessageConfig;
   private messageCallback?: (message: Message) => void;
   private capabilities: Capabilities;
+  private logger: Logger;
 
   constructor() {
+    this.logger = new Logger("IMessageAdapter");
     this.capabilities = {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: false, edit: false, delete: false, threads: false, quote: false },
@@ -34,8 +37,8 @@ export class IMessageAdapter implements FullAdapter {
 
     // iMessage requires AppleScript on macOS
     // This is a stub implementation
-    console.warn("iMessage adapter initialized in stub mode");
-    console.warn("Full implementation requires macOS and AppleScript automation");
+    this.logger.warn("iMessage adapter initialized in stub mode");
+    this.logger.warn("Full implementation requires macOS and AppleScript automation");
   }
 
   async send(target: string, content: SendContent, options?: SendOptions): Promise<SendResult> {
@@ -57,7 +60,7 @@ export class IMessageAdapter implements FullAdapter {
       if (process.platform !== "darwin") {
         throw new Error("iMessage adapter requires macOS");
       }
-      console.warn("AppleScript execution failed:", error);
+      this.logger.warn("AppleScript execution failed", error);
     }
 
     return {
@@ -70,7 +73,7 @@ export class IMessageAdapter implements FullAdapter {
 
   onMessage(callback: (message: Message) => void): void {
     this.messageCallback = callback;
-    console.warn("iMessage message receiving not implemented (requires macOS scripting)");
+    this.logger.warn("iMessage message receiving not implemented (requires macOS scripting)");
   }
 
   getCapabilities(): Capabilities {

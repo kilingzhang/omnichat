@@ -15,6 +15,7 @@ import type {
   ThreadInfo,
   TargetType,
 } from "@omnichat/core";
+import { Logger, LogLevel } from "@omnichat/core";
 
 // Import function - can be mocked in tests
 let importTelegramBot: () => Promise<any> = async () => {
@@ -76,13 +77,21 @@ export class TelegramAdapter implements FullAdapter {
   private config?: TelegramConfig;
   private messageCallback?: (message: Message) => void;
   private capabilities: Capabilities;
+  private logger: Logger;
   // Cache for inferred target types to avoid repeated lookups
   private targetTypeCache = new Map<string, TargetType>();
   // Optional performance optimization features (lazy loaded)
   private cachedClient: any = null;  // CachedTelegramClient
   private requestQueue: any = null;  // RequestQueue
 
+  // Bound event handlers for proper cleanup
+  private boundMessageHandler?: (msg: any) => void;
+  private boundCallbackHandler?: (query: any) => void;
+  private boundPollingHandler?: () => void;
+  private boundPollingErrorHandler?: (error: Error) => void;
+
   constructor() {
+    this.logger = new Logger("TelegramAdapter", LogLevel.INFO);
     this.capabilities = {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: true, edit: true, delete: true, threads: true, quote: true },
@@ -112,7 +121,7 @@ export class TelegramAdapter implements FullAdapter {
         setChatDescription: true,
       },
       advanced: {
-        inline: true,
+        inline: false,  // TODO: Implement onInlineQuery and answerInlineQuery
         deepLinks: true,
         createInvite: true,
         getInvites: true,
@@ -121,7 +130,7 @@ export class TelegramAdapter implements FullAdapter {
         topics: true,
         batch: false,
         payments: false,
-        games: true,
+        games: false,  // TODO: Implement sendGame, setGameScore, getGameHighScores
         videoChat: false,
         stories: false,
         customEmoji: true,
@@ -171,23 +180,29 @@ export class TelegramAdapter implements FullAdapter {
         await this.bot.setWebHook(this.config.webhookUrl);
       }
 
-      // Register message handlers
-      this.bot.on("message", (msg: any) => this.handleTelegramMessage(msg));
-      this.bot.on("callback_query", (query: any) => this.handleCallbackQuery(query));
+      // Create bound handlers for proper cleanup
+      this.boundMessageHandler = (msg: any) => this.handleTelegramMessage(msg);
+      this.boundCallbackHandler = (query: any) => this.handleCallbackQuery(query);
+      this.boundPollingHandler = () => {
+        this.logger.info("📨 Telegram polling started");
+      };
+      this.boundPollingErrorHandler = (error: Error) => {
+        this.logger.error("Telegram polling error:", error);
+      };
+
+      // Register message handlers with bound references
+      this.bot.on("message", this.boundMessageHandler);
+      this.bot.on("callback_query", this.boundCallbackHandler);
 
       // Handle polling events
-      this.bot.on("polling", () => {
-        console.log("📨 Telegram polling started");
-      });
-      this.bot.on("polling_error", (error: Error) => {
-        console.error("Telegram polling error:", error);
-      });
+      this.bot.on("polling", this.boundPollingHandler);
+      this.bot.on("polling_error", this.boundPollingErrorHandler);
 
-      console.log("✅ Telegram bot initialized with polling:", this.config.polling !== false);
+      this.logger.info("✅ Telegram bot initialized with polling:", this.config.polling !== false);
     } catch (error: any) {
       if ((error as any).code === "MODULE_NOT_FOUND") {
-        console.warn("node-telegram-bot-api not installed. Install with: npm install node-telegram-bot-api");
-        console.warn("Creating mock adapter for development...");
+        this.logger.warn("node-telegram-bot-api not installed. Install with: npm install node-telegram-bot-api");
+        this.logger.warn("Creating mock adapter for development...");
         this.bot = null;
       } else {
         throw error;
@@ -316,7 +331,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to send message to ${target}:`, error);
+      this.logger.error(`Failed to send message to ${target}:`, error);
       throw error;
     }
   }
@@ -339,7 +354,7 @@ export class TelegramAdapter implements FullAdapter {
     });
   }
 
-  async edit(messageId: string, newText: string, options?: SendOptions): Promise<void> {
+  async edit(messageId: string, newText: string, options?: SendOptions): Promise<SendResult> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
     }
@@ -364,9 +379,15 @@ export class TelegramAdapter implements FullAdapter {
     };
 
     try {
-      await this.bot.editMessageText(chatId, parseInt(msgId, 10), newText, opts);
+      const result: any = await this.bot.editMessageText(chatId, parseInt(msgId, 10), newText, opts);
+      return {
+        platform: this.platform,
+        messageId: `${chatId}:${result.message_id}`,
+        chatId: chatId,
+        timestamp: Date.now(),
+      };
     } catch (error) {
-      console.error(`Failed to edit message ${msgId}:`, error);
+      this.logger.error(`Failed to edit message ${msgId}:`, error);
       throw error;
     }
   }
@@ -390,7 +411,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.deleteMessage(chatId, parseInt(msgId, 10));
     } catch (error) {
-      console.error(`Failed to delete message ${msgId}:`, error);
+      this.logger.error(`Failed to delete message ${msgId}:`, error);
       throw error;
     }
   }
@@ -436,7 +457,7 @@ export class TelegramAdapter implements FullAdapter {
         channel: target,
       };
     } catch (error) {
-      console.error(`Failed to send poll to ${target}:`, error);
+      this.logger.error(`Failed to send poll to ${target}:`, error);
       throw error;
     }
   }
@@ -460,7 +481,7 @@ export class TelegramAdapter implements FullAdapter {
         show_alert: options?.showAlert || false,
       });
     } catch (error) {
-      console.error(`Failed to answer callback query ${callbackQueryId}:`, error);
+      this.logger.error(`Failed to answer callback query ${callbackQueryId}:`, error);
       throw error;
     }
   }
@@ -484,7 +505,7 @@ export class TelegramAdapter implements FullAdapter {
     } catch (error: any) {
       // If setMessageReaction is not available (older bot API version), log warning
       if (error.response?.statusCode !== 400) {
-        console.warn(`Failed to add reaction to message ${msgId}:`, error);
+        this.logger.warn(`Failed to add reaction to message ${msgId}:`, error);
       }
     }
   }
@@ -508,7 +529,7 @@ export class TelegramAdapter implements FullAdapter {
     } catch (error: any) {
       // Silently fail - reaction removal might not be critical
       if (error.response?.statusCode !== 400) {
-        console.warn(`Failed to remove reactions from message ${msgId}:`, error);
+        this.logger.warn(`Failed to remove reactions from message ${msgId}:`, error);
       }
     }
   }
@@ -527,7 +548,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to send sticker to ${target}:`, error);
+      this.logger.error(`Failed to send sticker to ${target}:`, error);
       throw error;
     }
   }
@@ -550,7 +571,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to send message with effect to ${target}:`, error);
+      this.logger.error(`Failed to send message with effect to ${target}:`, error);
       throw error;
     }
   }
@@ -568,7 +589,7 @@ export class TelegramAdapter implements FullAdapter {
 
       await this.bot.setMyCommands(botCommands);
     } catch (error) {
-      console.error("Failed to set bot commands:", error);
+      this.logger.error("Failed to set bot commands:", error);
       throw error;
     }
   }
@@ -585,7 +606,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.sendChatAction(target, action);
     } catch (error) {
-      console.error(`Failed to send chat action ${action} to ${target}:`, error);
+      this.logger.error(`Failed to send chat action ${action} to ${target}:`, error);
       throw error;
     }
   }
@@ -626,7 +647,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error(`Failed to send keyboard to ${target}:`, error);
+      this.logger.error(`Failed to send keyboard to ${target}:`, error);
       throw error;
     }
   }
@@ -654,7 +675,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error(`Failed to hide keyboard for ${target}:`, error);
+      this.logger.error(`Failed to hide keyboard for ${target}:`, error);
       throw error;
     }
   }
@@ -694,7 +715,7 @@ export class TelegramAdapter implements FullAdapter {
         });
       });
     } catch (error) {
-      console.error(`Failed to download file ${msgId}:`, error);
+      this.logger.error(`Failed to download file ${msgId}:`, error);
       throw error;
     }
   }
@@ -710,7 +731,7 @@ export class TelegramAdapter implements FullAdapter {
     }
 
     try {
-      console.log(`📥 Getting file info for: ${fileId.substring(0, 20)}...`);
+      this.logger.info(`📥 Getting file info for: ${fileId.substring(0, 20)}...`);
 
       const fileLink = await this.bot.getFileLink(fileId);
 
@@ -718,7 +739,7 @@ export class TelegramAdapter implements FullAdapter {
         throw new Error("Failed to get file link");
       }
 
-      console.log(`📥 File link: ${fileLink}`);
+      this.logger.info(`📥 File link: ${fileLink}`);
 
       const https = await import("https");
 
@@ -733,14 +754,14 @@ export class TelegramAdapter implements FullAdapter {
           response.on("data", (chunk: Buffer) => chunks.push(chunk));
           response.on("end", () => {
             const buffer = Buffer.concat(chunks);
-            console.log(`📥 Downloaded ${buffer.length} bytes`);
+            this.logger.info(`📥 Downloaded ${buffer.length} bytes`);
             resolve(buffer);
           });
           response.on("error", reject);
         });
       });
     } catch (error) {
-      console.error(`Failed to download file ${fileId}:`, error);
+      this.logger.error(`Failed to download file ${fileId}:`, error);
       throw error;
     }
   }
@@ -769,7 +790,7 @@ export class TelegramAdapter implements FullAdapter {
         timestamp: result.date * 1000,
       };
     } catch (error) {
-      console.error(`Failed to forward message from ${fromChat} to ${to}:`, error);
+      this.logger.error(`Failed to forward message from ${fromChat} to ${to}:`, error);
       throw error;
     }
   }
@@ -814,7 +835,7 @@ export class TelegramAdapter implements FullAdapter {
         inviteLink: chatInfo.invite_link,
       };
     } catch (error) {
-      console.error(`Failed to get chat info for ${chatId}:`, error);
+      this.logger.error(`Failed to get chat info for ${chatId}:`, error);
       throw error;
     }
   }
@@ -833,7 +854,7 @@ export class TelegramAdapter implements FullAdapter {
       const count = await this.bot.getChatMemberCount(chatId);
       return count;
     } catch (error) {
-      console.error(`Failed to get chat member count for ${chatId}:`, error);
+      this.logger.error(`Failed to get chat member count for ${chatId}:`, error);
       throw error;
     }
   }
@@ -879,7 +900,7 @@ export class TelegramAdapter implements FullAdapter {
         roles,
       };
     } catch (error) {
-      console.error(`Failed to get chat member ${userId} from ${chatId}:`, error);
+      this.logger.error(`Failed to get chat member ${userId} from ${chatId}:`, error);
       throw error;
     }
   }
@@ -937,7 +958,7 @@ export class TelegramAdapter implements FullAdapter {
         };
       });
     } catch (error) {
-      console.error(`Failed to get chat administrators for ${chatId}:`, error);
+      this.logger.error(`Failed to get chat administrators for ${chatId}:`, error);
       throw error;
     }
   }
@@ -964,7 +985,7 @@ export class TelegramAdapter implements FullAdapter {
         disable_notification: options?.disableNotification,
       });
     } catch (error) {
-      console.error(`Failed to pin message ${msgId}:`, error);
+      this.logger.error(`Failed to pin message ${msgId}:`, error);
       throw error;
     }
   }
@@ -988,7 +1009,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.unpinChatMessage(chatId, parseInt(msgId, 10));
     } catch (error) {
-      console.error(`Failed to unpin message ${msgId}:`, error);
+      this.logger.error(`Failed to unpin message ${msgId}:`, error);
       throw error;
     }
   }
@@ -1005,7 +1026,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.unpinAllChatMessages(chatId);
     } catch (error) {
-      console.error(`Failed to unpin all messages in ${chatId}:`, error);
+      this.logger.error(`Failed to unpin all messages in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1058,7 +1079,7 @@ export class TelegramAdapter implements FullAdapter {
 
       await this.bot.setChatPermissions(chatId, telegramPermissions);
     } catch (error) {
-      console.error(`Failed to set chat permissions for ${chatId}:`, error);
+      this.logger.error(`Failed to set chat permissions for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1087,7 +1108,7 @@ export class TelegramAdapter implements FullAdapter {
         revoke_messages: options?.revokeMessages,
       });
     } catch (error) {
-      console.error(`Failed to ban user ${userId} from ${chatId}:`, error);
+      this.logger.error(`Failed to ban user ${userId} from ${chatId}:`, error);
       throw error;
     }
   }
@@ -1108,7 +1129,7 @@ export class TelegramAdapter implements FullAdapter {
         only_if_banned: onlyIfBanned,
       });
     } catch (error) {
-      console.error(`Failed to unban user ${userId} from ${chatId}:`, error);
+      this.logger.error(`Failed to unban user ${userId} from ${chatId}:`, error);
       throw error;
     }
   }
@@ -1171,7 +1192,7 @@ export class TelegramAdapter implements FullAdapter {
         use_independent_chat_permissions: options?.useIndependentChatPermissions,
       });
     } catch (error) {
-      console.error(`Failed to restrict user ${userId} in ${chatId}:`, error);
+      this.logger.error(`Failed to restrict user ${userId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1232,7 +1253,7 @@ export class TelegramAdapter implements FullAdapter {
 
       await this.bot.promoteChatMember(chatId, parseInt(userId, 10), telegramRights);
     } catch (error) {
-      console.error(`Failed to promote user ${userId} in ${chatId}:`, error);
+      this.logger.error(`Failed to promote user ${userId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1254,7 +1275,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.setChatTitle(chatId, title);
     } catch (error) {
-      console.error(`Failed to set chat title for ${chatId}:`, error);
+      this.logger.error(`Failed to set chat title for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1276,7 +1297,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.setChatDescription(chatId, description || "");
     } catch (error) {
-      console.error(`Failed to set chat description for ${chatId}:`, error);
+      this.logger.error(`Failed to set chat description for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1294,7 +1315,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.setChatPhoto(chatId, photo);
     } catch (error) {
-      console.error(`Failed to set chat photo for ${chatId}:`, error);
+      this.logger.error(`Failed to set chat photo for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1311,7 +1332,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.deleteChatPhoto(chatId);
     } catch (error) {
-      console.error(`Failed to delete chat photo for ${chatId}:`, error);
+      this.logger.error(`Failed to delete chat photo for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1330,7 +1351,7 @@ export class TelegramAdapter implements FullAdapter {
       const link = await this.bot.exportChatInviteLink(chatId);
       return link;
     } catch (error) {
-      console.error(`Failed to export invite link for ${chatId}:`, error);
+      this.logger.error(`Failed to export invite link for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1339,7 +1360,7 @@ export class TelegramAdapter implements FullAdapter {
    * Create chat invite link
    * @param chatId - Chat ID or username
    * @param options - Optional parameters
-   * @returns Promise resolving to invite link info
+   * @returns Promise resolving to invite link info (snake_case from Telegram API)
    */
   async createChatInviteLink(
     chatId: string,
@@ -1350,13 +1371,13 @@ export class TelegramAdapter implements FullAdapter {
       createsJoinRequest?: boolean;
     }
   ): Promise<{
-    inviteLink: string;
+    invite_link: string;
     creator: any;
-    createsJoinRequest: boolean;
-    isPrimary: boolean;
+    creates_join_request: boolean;
+    is_primary: boolean;
     name?: string;
-    expireDate?: number;
-    memberLimit?: number;
+    expire_date?: number;
+    member_limit?: number;
   }> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
@@ -1372,7 +1393,7 @@ export class TelegramAdapter implements FullAdapter {
       const linkInfo = await this.bot.createChatInviteLink(chatId, linkOptions);
       return linkInfo;
     } catch (error) {
-      console.error(`Failed to create invite link for ${chatId}:`, error);
+      this.logger.error(`Failed to create invite link for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1382,7 +1403,7 @@ export class TelegramAdapter implements FullAdapter {
    * @param chatId - Chat ID or username
    * @param inviteLink - Invite link to edit
    * @param options - Optional parameters
-   * @returns Promise resolving to edited invite link info
+   * @returns Promise resolving to edited invite link info (snake_case from Telegram API)
    */
   async editChatInviteLink(
     chatId: string,
@@ -1394,13 +1415,13 @@ export class TelegramAdapter implements FullAdapter {
       createsJoinRequest?: boolean;
     }
   ): Promise<{
-    inviteLink: string;
+    invite_link: string;
     creator: any;
-    createsJoinRequest: boolean;
-    isPrimary: boolean;
+    creates_join_request: boolean;
+    is_primary: boolean;
     name?: string;
-    expireDate?: number;
-    memberLimit?: number;
+    expire_date?: number;
+    member_limit?: number;
   }> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
@@ -1416,7 +1437,7 @@ export class TelegramAdapter implements FullAdapter {
       const linkInfo = await this.bot.editChatInviteLink(chatId, inviteLink, linkOptions);
       return linkInfo;
     } catch (error) {
-      console.error(`Failed to edit invite link for ${chatId}:`, error);
+      this.logger.error(`Failed to edit invite link for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1425,14 +1446,14 @@ export class TelegramAdapter implements FullAdapter {
    * Revoke chat invite link
    * @param chatId - Chat ID or username
    * @param inviteLink - Invite link to revoke
-   * @returns Promise resolving to revoked invite link info
+   * @returns Promise resolving to revoked invite link info (snake_case from Telegram API)
    */
   async revokeChatInviteLink(chatId: string, inviteLink: string): Promise<{
-    inviteLink: string;
+    invite_link: string;
     creator: any;
-    createsJoinRequest: boolean;
-    isPrimary: boolean;
-    isRevoked: true;
+    creates_join_request: boolean;
+    is_primary: boolean;
+    is_revoked: true;
   }> {
     if (!this.bot) {
       throw new Error("Telegram bot not initialized");
@@ -1442,7 +1463,7 @@ export class TelegramAdapter implements FullAdapter {
       const linkInfo = await this.bot.revokeChatInviteLink(chatId, inviteLink);
       return linkInfo;
     } catch (error) {
-      console.error(`Failed to revoke invite link for ${chatId}:`, error);
+      this.logger.error(`Failed to revoke invite link for ${chatId}:`, error);
       throw error;
     }
   }
@@ -1460,7 +1481,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.approveChatJoinRequest(chatId, parseInt(userId, 10));
     } catch (error) {
-      console.error(`Failed to approve join request for user ${userId} in ${chatId}:`, error);
+      this.logger.error(`Failed to approve join request for user ${userId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1478,7 +1499,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.declineChatJoinRequest(chatId, parseInt(userId, 10));
     } catch (error) {
-      console.error(`Failed to decline join request for user ${userId} in ${chatId}:`, error);
+      this.logger.error(`Failed to decline join request for user ${userId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1522,7 +1543,7 @@ export class TelegramAdapter implements FullAdapter {
         ),
       };
     } catch (error) {
-      console.error(`Failed to get user profile photos for ${userId}:`, error);
+      this.logger.error(`Failed to get user profile photos for ${userId}:`, error);
       throw error;
     }
   }
@@ -1548,7 +1569,7 @@ export class TelegramAdapter implements FullAdapter {
         isVideo: sticker.is_video,
       }));
     } catch (error) {
-      console.error("Failed to get forum topic icon stickers:", error);
+      this.logger.error("Failed to get forum topic icon stickers:", error);
       throw error;
     }
   }
@@ -1588,7 +1609,7 @@ export class TelegramAdapter implements FullAdapter {
         threadId: topic.message_thread_id,
       };
     } catch (error) {
-      console.error(`Failed to create forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to create forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1616,7 +1637,7 @@ export class TelegramAdapter implements FullAdapter {
 
       await this.bot.editForumTopic(chatId, topicId, topicOptions);
     } catch (error) {
-      console.error(`Failed to edit forum topic ${topicId} in ${chatId}:`, error);
+      this.logger.error(`Failed to edit forum topic ${topicId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1634,7 +1655,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.closeForumTopic(chatId, messageThreadId);
     } catch (error) {
-      console.error(`Failed to close forum topic ${messageThreadId} in ${chatId}:`, error);
+      this.logger.error(`Failed to close forum topic ${messageThreadId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1652,7 +1673,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.reopenForumTopic(chatId, messageThreadId);
     } catch (error) {
-      console.error(`Failed to reopen forum topic ${messageThreadId} in ${chatId}:`, error);
+      this.logger.error(`Failed to reopen forum topic ${messageThreadId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1670,7 +1691,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.deleteForumTopic(chatId, messageThreadId);
     } catch (error) {
-      console.error(`Failed to delete forum topic ${messageThreadId} in ${chatId}:`, error);
+      this.logger.error(`Failed to delete forum topic ${messageThreadId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1688,7 +1709,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.unpinAllForumTopicMessages(chatId, messageThreadId);
     } catch (error) {
-      console.error(`Failed to unpin all messages in forum topic ${messageThreadId} in ${chatId}:`, error);
+      this.logger.error(`Failed to unpin all messages in forum topic ${messageThreadId} in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1706,7 +1727,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.editGeneralForumTopic(chatId, name);
     } catch (error) {
-      console.error(`Failed to edit General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to edit General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1723,7 +1744,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.closeGeneralForumTopic(chatId);
     } catch (error) {
-      console.error(`Failed to close General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to close General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1740,7 +1761,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.reopenGeneralForumTopic(chatId);
     } catch (error) {
-      console.error(`Failed to reopen General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to reopen General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1757,7 +1778,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.hideGeneralForumTopic(chatId);
     } catch (error) {
-      console.error(`Failed to hide General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to hide General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1774,7 +1795,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.unhideGeneralForumTopic(chatId);
     } catch (error) {
-      console.error(`Failed to unhide General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to unhide General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1791,7 +1812,7 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.unpinAllGeneralForumTopicMessages(chatId);
     } catch (error) {
-      console.error(`Failed to unpin all messages in General forum topic in ${chatId}:`, error);
+      this.logger.error(`Failed to unpin all messages in General forum topic in ${chatId}:`, error);
       throw error;
     }
   }
@@ -1808,15 +1829,35 @@ export class TelegramAdapter implements FullAdapter {
     try {
       await this.bot.leaveChat(chatId);
     } catch (error) {
-      console.error(`Failed to leave chat ${chatId}:`, error);
+      this.logger.error(`Failed to leave chat ${chatId}:`, error);
       throw error;
     }
   }
 
   async destroy(): Promise<void> {
+    // Remove event listeners before stopping polling
     if (this.bot) {
+      if (this.boundMessageHandler) {
+        this.bot.off("message", this.boundMessageHandler);
+      }
+      if (this.boundCallbackHandler) {
+        this.bot.off("callback_query", this.boundCallbackHandler);
+      }
+      if (this.boundPollingHandler) {
+        this.bot.off("polling", this.boundPollingHandler);
+      }
+      if (this.boundPollingErrorHandler) {
+        this.bot.off("polling_error", this.boundPollingErrorHandler);
+      }
       await this.bot.stopPolling();
     }
+
+    // Clear bound handlers
+    this.boundMessageHandler = undefined;
+    this.boundCallbackHandler = undefined;
+    this.boundPollingHandler = undefined;
+    this.boundPollingErrorHandler = undefined;
+
     this.bot = null;
     this.messageCallback = undefined;
     this.targetTypeCache.clear(); // Clear cache on destroy
@@ -1892,7 +1933,7 @@ export class TelegramAdapter implements FullAdapter {
   private handleTelegramMessage(msg: any): void {
     try {
       // Debug: Log raw message for troubleshooting
-      console.log(`📨 TG RAW: chat_id=${msg.chat.id}, type=${msg.chat.type}, text="${msg.text?.substring(0, 50)}", entities=${JSON.stringify(msg.entities?.map((e: any) => e.type))}`);
+      this.logger.info(`📨 TG RAW: chat_id=${msg.chat.id}, type=${msg.chat.type}, text="${msg.text?.substring(0, 50)}", entities=${JSON.stringify(msg.entities?.map((e: any) => e.type))}`);
 
       // 直接使用原始 Telegram ID
       const chatId = msg.chat.id.toString();
@@ -1975,7 +2016,7 @@ export class TelegramAdapter implements FullAdapter {
         this.messageCallback(message);
       }
     } catch (error) {
-      console.error("Failed to handle Telegram message:", error);
+      this.logger.error("Failed to handle Telegram message:", error);
     }
   }
 
@@ -2023,11 +2064,11 @@ export class TelegramAdapter implements FullAdapter {
       // Answer the callback query to remove the loading state
       if (this.bot) {
         this.bot.answerCallbackQuery(query.id).catch((error: Error) => {
-          console.warn("Failed to answer callback query:", error);
+          this.logger.warn("Failed to answer callback query:", error);
         });
       }
     } catch (error) {
-      console.error("Failed to handle callback query:", error);
+      this.logger.error("Failed to handle callback query:", error);
     }
   }
 
@@ -2060,13 +2101,14 @@ export class TelegramAdapter implements FullAdapter {
 
     const result = await this.createChatInviteLink(chatId, telegramOptions);
 
+    // Telegram API returns snake_case format
     return {
-      url: result.inviteLink,
-      code: this.extractInviteCode(result.inviteLink),
+      url: result.invite_link,
+      code: this.extractInviteCode(result.invite_link),
       creator: result.creator ? this.mapTelegramUserToParticipant(result.creator) : undefined,
-      maxUses: result.memberLimit,
-      expiresAt: result.expireDate,
-      isPrimary: result.isPrimary,
+      maxUses: result.member_limit,
+      expiresAt: result.expire_date,
+      isPrimary: result.is_primary,
       raw: result,
     };
   }

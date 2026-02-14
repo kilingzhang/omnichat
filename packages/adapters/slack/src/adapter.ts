@@ -35,6 +35,9 @@ export class SlackAdapter implements FullAdapter {
   private capabilities: Capabilities;
   private logger: Logger;
 
+  /** @internal Test-only property to inject mock slack module */
+  _testSlackModule?: any;
+
   constructor() {
     this.logger = new Logger("SlackAdapter", LogLevel.INFO);
     this.capabilities = {
@@ -56,8 +59,9 @@ export class SlackAdapter implements FullAdapter {
     this.logger.info("Initializing Slack adapter...");
 
     try {
-      // Dynamically import @slack/web-api
-      const { WebClient } = await import("@slack/web-api");
+      // Dynamically import @slack/web-api (or use test mock if provided)
+      const SlackModule = this._testSlackModule || await import("@slack/web-api");
+      const { WebClient } = SlackModule;
       this.client = new WebClient(this.config.botToken);
 
       // Test connection

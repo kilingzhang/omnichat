@@ -1,6 +1,7 @@
 import type { FullAdapter, AdapterConfig, SendContent, SendOptions, SendResult } from "@omnichat/core";
 import type { Message, MessageContent, Participant, ReplyReference } from "@omnichat/core";
 import type { Capabilities } from "@omnichat/core";
+import { Logger } from "@omnichat/core";
 
 /**
  * Signal adapter configuration
@@ -20,8 +21,10 @@ export class SignalAdapter implements FullAdapter {
   private config?: SignalConfig;
   private messageCallback?: (message: Message) => void;
   private capabilities: Capabilities;
+  private logger: Logger;
 
   constructor() {
+    this.logger = new Logger("SignalAdapter");
     this.capabilities = {
       base: { sendText: true, sendMedia: true, receive: true },
       conversation: { reply: false, edit: false, delete: false, threads: false, quote: false },
@@ -41,11 +44,11 @@ export class SignalAdapter implements FullAdapter {
     try {
       const signal = await import("libsignal-node");
       this.client = null; // Signal requires complex setup, just basic stub
-      console.warn("Signal adapter initialized in stub mode. Full implementation requires Signal database setup.");
+      this.logger.warn("Signal adapter initialized in stub mode. Full implementation requires Signal database setup.");
     } catch (error: any) {
       if ((error as any).code === "MODULE_NOT_FOUND") {
-        console.warn("libsignal-node not installed. Install with: npm install libsignal-node");
-        console.warn("Creating mock adapter for development...");
+        this.logger.warn("libsignal-node not installed. Install with: npm install libsignal-node");
+        this.logger.warn("Creating mock adapter for development...");
         this.client = null;
       } else {
         throw error;
@@ -66,7 +69,7 @@ export class SignalAdapter implements FullAdapter {
       throw new Error("Signal client not initialized");
     }
 
-    console.log(`Adding reaction ${emoji} to ${messageId}`);
+    this.logger.debug(`Adding reaction ${emoji} to ${messageId}`);
   }
 
   async removeReaction(messageId: string, emoji: string): Promise<void> {
@@ -74,7 +77,7 @@ export class SignalAdapter implements FullAdapter {
       throw new Error("Signal client not initialized");
     }
 
-    console.log(`Removing reaction ${emoji} from ${messageId}`);
+    this.logger.debug(`Removing reaction ${emoji} from ${messageId}`);
   }
 
   onMessage(callback: (message: Message) => void): void {

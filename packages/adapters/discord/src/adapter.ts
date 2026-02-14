@@ -273,6 +273,12 @@ export class DiscordAdapter implements FullAdapter {
   private capabilities: Capabilities;
   private logger: Logger;
 
+  // Bound event handlers for proper cleanup
+  private boundMessageHandler?: (msg: any) => void;
+  private boundReactionHandler?: (reaction: any, user: any) => void;
+  private boundInteractionHandler?: (interaction: any) => void;
+  private boundErrorHandler?: (error: Error) => void;
+
   /** @internal Test-only property to inject mock discord.js module */
   _testDiscordModule?: any;
 
@@ -367,24 +373,30 @@ export class DiscordAdapter implements FullAdapter {
         intents: intents,
       });
 
-      // Register message handler
-      this.client.on("messageCreate", (msg: any) => {
+      // Create bound handlers for proper cleanup
+      this.boundMessageHandler = (msg: any) => {
         this.logger.info(`📨 MSG RECEIVED - Channel: ${msg.channelId}, Type: ${msg.channel?.type}, DM: ${msg.channel?.type === 1}, Author: ${msg.author?.username}, Content: ${msg.content?.substring(0, 50) || "[no content]"}`);
         this.handleDiscordMessage(msg);
-      });
-      this.client.on("messageReactionAdd", (reaction: any, user: any) => this.handleDiscordReaction(reaction, user));
-
-      // Register interaction handlers
-      if (this.config.handleInteractions !== false) {
-        this.client.on("interactionCreate", (interaction: any) => this.handleInteraction(interaction));
-      }
-
-      this.client.on("error", (error: Error) => {
+      };
+      this.boundReactionHandler = (reaction: any, user: any) => this.handleDiscordReaction(reaction, user);
+      this.boundErrorHandler = (error: Error) => {
         this.logger.error("Discord client error", error);
         if (this.errorCallback) {
           this.errorCallback(error);
         }
-      });
+      };
+
+      // Register message handler
+      this.client.on("messageCreate", this.boundMessageHandler);
+      this.client.on("messageReactionAdd", this.boundReactionHandler);
+
+      // Register interaction handlers
+      if (this.config.handleInteractions !== false) {
+        this.boundInteractionHandler = (interaction: any) => this.handleInteraction(interaction);
+        this.client.on("interactionCreate", this.boundInteractionHandler);
+      }
+
+      this.client.on("error", this.boundErrorHandler);
 
       // Log when client is ready
       this.client.once("ready", () => {
@@ -583,23 +595,8 @@ export class DiscordAdapter implements FullAdapter {
     }
   }
 
-  async reply(toMessageId: string, content: SendContent, options?: SendOptions): Promise<SendResult> {
-    const parts = toMessageId.split(":");
-    if (parts.length !== 2) {
-      throw new Error(
-        `Invalid messageId format: ${toMessageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    const [channelId, msgId] = parts;
-
-    if (!channelId || !msgId) {
-      throw new Error(
-        `Invalid messageId format: ${toMessageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    this.logger.debug(`Replying to message ${msgId} in channel ${channelId}`);
+  async reply(channelId: string, messageId: string, content: SendContent, options?: SendOptions): Promise<SendResult> {
+    this.logger.debug(`Replying to message ${messageId} in channel ${channelId}`);
 
     let result: any;
 
@@ -610,12 +607,12 @@ export class DiscordAdapter implements FullAdapter {
       if (content.mediaUrl) {
         result = await channel.send({
           files: [{ attachment: content.mediaUrl, description: content.text }],
-          messageReference: { messageId: msgId },
+          messageReference: { messageId },
         });
       } else {
         result = await channel.send({
           content: content.text,
-          messageReference: { messageId: msgId },
+          messageReference: { messageId },
         });
       }
 
@@ -623,84 +620,60 @@ export class DiscordAdapter implements FullAdapter {
 
       return {
         platform: this.platform,
-        messageId: `${channelId}:${result.id}`,
+        messageId: result.id,
         chatId: channelId,
         timestamp: result.createdTimestamp || Date.now(),
       };
     } catch (error) {
-      this.logger.error(`Failed to reply to message ${msgId}`, error);
+      this.logger.error(`Failed to reply to message ${messageId}`, error);
       throw error;
     }
   }
 
-  async edit(messageId: string, newText: string, options?: SendOptions): Promise<void> {
+  async edit(channelId: string, messageId: string, newText: string, options?: SendOptions): Promise<SendResult> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
-    }
-
-    const parts = messageId.split(":");
-    if (parts.length !== 2) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    const [channelId, msgId] = parts;
-
-    if (!channelId || !msgId) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
     }
 
     if (!newText) {
       throw new Error("New text is required for editing");
     }
 
-    this.logger.debug(`Editing message ${msgId} in channel ${channelId}`);
+    this.logger.debug(`Editing message ${messageId} in channel ${channelId}`);
 
     try {
       const channel: any = await this.client.channels.fetch(channelId);
-      const message = await channel.messages.fetch(msgId);
-      await message.edit({
+      const message = await channel.messages.fetch(messageId);
+      const result = await message.edit({
         content: newText,
       });
-      this.logger.info(`Message ${msgId} edited successfully`);
+      this.logger.info(`Message ${messageId} edited successfully`);
+      return {
+        platform: this.platform,
+        messageId: result.id,
+        chatId: channelId,
+        timestamp: result.editedTimestamp || result.createdTimestamp || Date.now(),
+      };
     } catch (error) {
-      this.logger.error(`Failed to edit message ${msgId}`, error);
+      this.logger.error(`Failed to edit message ${messageId}`, error);
       throw error;
     }
   }
 
-  async delete(messageId: string): Promise<void> {
+  async delete(channelId: string, messageId: string): Promise<void> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
     }
 
-    const parts = messageId.split(":");
-    if (parts.length !== 2) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    const [channelId, msgId] = parts;
-
-    if (!channelId || !msgId) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    this.logger.debug(`Deleting message ${msgId} in channel ${channelId}`);
+    this.logger.debug(`Deleting message ${messageId} in channel ${channelId}`);
 
     try {
       const channel: any = await this.client.channels.fetch(channelId);
-      const message = await channel.messages.fetch(msgId);
+      const message = await channel.messages.fetch(messageId);
       await message.delete();
-      this.logger.info(`Message ${msgId} deleted successfully`);
+      this.logger.info(`Message ${messageId} deleted successfully`);
     } catch (error) {
-      this.logger.error(`Failed to delete message ${msgId}`, error);
+      this.logger.error(`Failed to delete message ${messageId}`, error);
       throw error;
     }
   }
@@ -747,56 +720,38 @@ export class DiscordAdapter implements FullAdapter {
     }
   }
 
-  async addReaction(messageId: string, emoji: string): Promise<void> {
+  async addReaction(channelId: string, messageId: string, emoji: string): Promise<void> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
     }
 
-    const parts = messageId.split(":");
-    if (parts.length !== 2) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    const [channelId, msgId] = parts;
-
-    this.logger.debug(`Adding reaction ${emoji} to message ${msgId}`);
+    this.logger.debug(`Adding reaction ${emoji} to message ${messageId}`);
 
     try {
       const channel: any = await this.client.channels.fetch(channelId);
-      const message = await channel.messages.fetch(msgId);
+      const message = await channel.messages.fetch(messageId);
       await message.react(emoji);
       this.logger.info(`Reaction added successfully`);
     } catch (error) {
-      this.logger.error(`Failed to add reaction to message ${msgId}`, error);
+      this.logger.error(`Failed to add reaction to message ${messageId}`, error);
       throw error;
     }
   }
 
-  async removeReaction(messageId: string, emoji: string): Promise<void> {
+  async removeReaction(channelId: string, messageId: string, emoji: string): Promise<void> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
     }
 
-    const parts = messageId.split(":");
-    if (parts.length !== 2) {
-      throw new Error(
-        `Invalid messageId format: ${messageId}. Expected format: channelId:messageId`,
-      );
-    }
-
-    const [channelId, msgId] = parts;
-
-    this.logger.debug(`Removing reaction ${emoji} from message ${msgId}`);
+    this.logger.debug(`Removing reaction ${emoji} from message ${messageId}`);
 
     try {
       const channel: any = await this.client.channels.fetch(channelId);
-      const message = await channel.messages.fetch(msgId);
+      const message = await channel.messages.fetch(messageId);
       await message.reactions.cache.get(emoji)?.remove();
       this.logger.info(`Reaction removed successfully`);
     } catch (error) {
-      this.logger.warn(`Failed to remove reaction from message ${msgId}`, error);
+      this.logger.warn(`Failed to remove reaction from message ${messageId}`, error);
       throw error;
     }
   }
@@ -805,55 +760,6 @@ export class DiscordAdapter implements FullAdapter {
     throw new Error("Discord stickers are not supported in this adapter yet");
   }
 
-  /**
-   * Kick a member from a guild
-   */
-  async kick(guildId: string, userId: string, reason?: string): Promise<void> {
-    if (!this.client) {
-      throw new Error("Discord client not initialized");
-    }
-
-    this.logger.debug(`Kicking user ${userId} from guild ${guildId}`);
-
-    try {
-      const guild = await this.client.guilds.fetch(guildId);
-      await guild.members.kick(userId, reason);
-      this.logger.info(`User ${userId} kicked from guild ${guildId}`);
-    } catch (error) {
-      this.logger.error(`Failed to kick user ${userId}`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Ban a member from a guild
-   */
-  async ban(guildId: string, userId: string, reason?: string, duration?: number): Promise<void> {
-    if (!this.client) {
-      throw new Error("Discord client not initialized");
-    }
-
-    this.logger.debug(`Banning user ${userId} from guild ${guildId}`);
-
-    try {
-      const guild = await this.client.guilds.fetch(guildId);
-
-      const banOptions: any = {
-        reason: reason
-      };
-
-      // If duration is provided, calculate expiration date
-      if (duration) {
-        banOptions.expirationDate = Date.now() + duration;
-      }
-
-      await guild.bans.create(userId, banOptions);
-      this.logger.info(`User ${userId} banned from guild ${guildId}`);
-    } catch (error) {
-      this.logger.error(`Failed to ban user ${userId}`, error);
-      throw error;
-    }
-  }
 
   /**
    * Timeout (mute) a member for a specific duration
@@ -974,7 +880,14 @@ export class DiscordAdapter implements FullAdapter {
     this.logger.debug(`Fetching history for channel ${channel}, limit: ${limit}`);
 
     try {
-      const messages = await this.client.channels.fetchMessages(channel, {
+      // Fetch the channel first
+      const discordChannel: any = await this.client.channels.fetch(channel);
+      if (!discordChannel || !discordChannel.messages) {
+        throw new Error(`Channel ${channel} not found or is not a text channel`);
+      }
+
+      // Use the correct Discord.js v14 API
+      const messages = await discordChannel.messages.fetch({
         limit: Math.min(limit, 100),
       });
 
@@ -1006,35 +919,6 @@ export class DiscordAdapter implements FullAdapter {
       return messages.map((msg: any) => this.mapDiscordMessage(msg));
     } catch (error) {
       this.logger.error(`Failed to fetch pinned messages for channel ${channel}`, error);
-      throw error;
-    }
-  }
-
-  async getMemberInfo(userId: string): Promise<{
-    id: string;
-    name: string;
-    username?: string;
-    avatar?: string;
-    roles?: string[];
-  }> {
-    if (!this.client) {
-      throw new Error("Discord client not initialized");
-    }
-
-    this.logger.debug(`Fetching member info for user ${userId}`);
-
-    try {
-      const user: any = await this.client.users.fetch(userId);
-
-      return {
-        id: user.id,
-        name: user.displayName || user.username,
-        username: user.username,
-        avatar: user.avatarURL(),
-        roles: [],
-      };
-    } catch (error) {
-      this.logger.error(`Failed to fetch member info for user ${userId}`, error);
       throw error;
     }
   }
@@ -2200,49 +2084,6 @@ export class DiscordAdapter implements FullAdapter {
   // =========================================================================
 
   /**
-   * Create an invite
-   */
-  async createInvite(
-    channelId: string,
-    options?: {
-      maxAge?: number;
-      maxUses?: number;
-      temporary?: boolean;
-      unique?: boolean;
-      reason?: string;
-    }
-  ): Promise<{ code: string; url: string }> {
-    if (!this.client) {
-      throw new Error("Discord client not initialized");
-    }
-
-    this.logger.debug(`Creating invite for channel ${channelId}`);
-
-    try {
-      const channel: any = await this.client.channels.fetch(channelId);
-
-      // Create invite using the channel's invites manager
-      const invite = await channel.createInvite({
-        maxAge: options?.maxAge || 86400, // Default 24 hours
-        maxUses: options?.maxUses,
-        temporary: options?.temporary || false,
-        unique: options?.unique,
-        reason: options?.reason,
-      });
-
-      this.logger.info(`Invite created: ${invite.code}`);
-
-      return {
-        code: invite.code,
-        url: invite.url,
-      };
-    } catch (error) {
-      this.logger.error("Failed to create invite", error);
-      throw error;
-    }
-  }
-
-  /**
    * Get a single invite by code (uses client.fetchInvite, doesn't need channelId)
    */
   async getInvite(inviteCode: string): Promise<{
@@ -2270,37 +2111,6 @@ export class DiscordAdapter implements FullAdapter {
       };
     } catch (error) {
       this.logger.error("Failed to fetch invite", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get invites for a channel
-   */
-  async getInvites(channelId: string): Promise<Array<{
-    code: string;
-    url: string;
-    maxUses?: number;
-    uses: number;
-    expiresAt?: Date;
-  }>> {
-    if (!this.client) {
-      throw new Error("Discord client not initialized");
-    }
-
-    try {
-      const channel: any = await this.client.channels.fetch(channelId);
-      const invites = await channel.invites.fetch();
-
-      return invites.map((invite: any) => ({
-        code: invite.code,
-        url: invite.url,
-        maxUses: invite.maxUses,
-        uses: invite.uses,
-        expiresAt: invite.expiresAt,
-      }));
-    } catch (error) {
-      this.logger.error("Failed to fetch invites", error);
       throw error;
     }
   }
@@ -2431,12 +2241,34 @@ export class DiscordAdapter implements FullAdapter {
   async destroy(): Promise<void> {
     this.logger.info("Destroying Discord adapter...");
 
+    // Remove event listeners before destroying client
     if (this.client) {
+      if (this.boundMessageHandler) {
+        this.client.off("messageCreate", this.boundMessageHandler);
+      }
+      if (this.boundReactionHandler) {
+        this.client.off("messageReactionAdd", this.boundReactionHandler);
+      }
+      if (this.boundInteractionHandler) {
+        this.client.off("interactionCreate", this.boundInteractionHandler);
+      }
+      if (this.boundErrorHandler) {
+        this.client.off("error", this.boundErrorHandler);
+      }
       await this.client.destroy();
       this.client = null;
     }
 
+    // Clear bound handlers
+    this.boundMessageHandler = undefined;
+    this.boundReactionHandler = undefined;
+    this.boundInteractionHandler = undefined;
+    this.boundErrorHandler = undefined;
+
     this.messageCallback = undefined;
+    this.interactionCallback = undefined;
+    this.errorCallback = undefined;
+    this.interactionCache.clear();
     this.logger.info("Discord adapter destroyed");
   }
 
@@ -2742,8 +2574,8 @@ export class DiscordAdapter implements FullAdapter {
   }
 
   // ============================================================================
-  // Unified API Methods (Standardized across platforms)
-  // Note: These override/extend the native Discord methods with unified signatures
+  // Standard API Methods
+  // Note: These override/extend the native Discord methods with standard signatures
   // ============================================================================
 
   /**
@@ -2751,8 +2583,8 @@ export class DiscordAdapter implements FullAdapter {
    */
   async createInvite(
     channelId: string,
-    options?: import("@omnichat/core").UnifiedInviteOptions
-  ): Promise<import("@omnichat/core").UnifiedInviteResult> {
+    options?: import("@omnichat/core").InviteOptions
+  ): Promise<import("@omnichat/core").InviteResult> {
     const discordOptions: {
       maxAge?: number;
       maxUses?: number;
@@ -2816,7 +2648,7 @@ export class DiscordAdapter implements FullAdapter {
    */
   async getInvites(
     channelId: string
-  ): Promise<import("@omnichat/core").UnifiedInviteResult[]> {
+  ): Promise<import("@omnichat/core").InviteResult[]> {
     const invites = await this._getDiscordInvites(channelId);
     return invites.map((invite) => ({
       url: invite.url,
@@ -2857,7 +2689,7 @@ export class DiscordAdapter implements FullAdapter {
   async revokeInvite(
     channelId: string,
     inviteCode: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       await this._deleteDiscordInvite(channelId, inviteCode);
       return { success: true };
@@ -2897,8 +2729,8 @@ export class DiscordAdapter implements FullAdapter {
   async pinMessage(
     channelId: string,
     messageId: string,
-    options?: import("@omnichat/core").UnifiedPinOptions
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    options?: import("@omnichat/core").PinOptions
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       if (!this.client) {
         throw new Error("Discord client not initialized");
@@ -2919,7 +2751,7 @@ export class DiscordAdapter implements FullAdapter {
   async unpinMessage(
     channelId: string,
     messageId: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       if (!this.client) {
         throw new Error("Discord client not initialized");
@@ -2940,7 +2772,7 @@ export class DiscordAdapter implements FullAdapter {
   async getMemberInfo(
     guildId: string,
     userId: string
-  ): Promise<import("@omnichat/core").UnifiedMemberInfo> {
+  ): Promise<import("@omnichat/core").MemberInfo> {
     const member = await this._getDiscordMember(guildId, userId);
     return {
       id: member.user.id,
@@ -2995,7 +2827,7 @@ export class DiscordAdapter implements FullAdapter {
    */
   async getAdministrators(
     guildId: string
-  ): Promise<import("@omnichat/core").UnifiedMemberInfo[]> {
+  ): Promise<import("@omnichat/core").MemberInfo[]> {
     if (!this.client) {
       throw new Error("Discord client not initialized");
     }
@@ -3023,8 +2855,8 @@ export class DiscordAdapter implements FullAdapter {
   async kick(
     guildId: string,
     userId: string,
-    options?: import("@omnichat/core").UnifiedModerationOptions
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    options?: import("@omnichat/core").ModerationOptions
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       await this._kickDiscordUser(guildId, userId, options?.reason);
       return { success: true };
@@ -3052,8 +2884,8 @@ export class DiscordAdapter implements FullAdapter {
   async ban(
     guildId: string,
     userId: string,
-    options?: import("@omnichat/core").UnifiedModerationOptions
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    options?: import("@omnichat/core").ModerationOptions
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       const duration = options?.durationSeconds ? options.durationSeconds * 1000 : undefined;
       await this._banDiscordUser(guildId, userId, options?.reason, duration);
@@ -3088,7 +2920,7 @@ export class DiscordAdapter implements FullAdapter {
   async unban(
     guildId: string,
     userId: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       if (!this.client) {
         throw new Error("Discord client not initialized");
@@ -3108,8 +2940,8 @@ export class DiscordAdapter implements FullAdapter {
   async mute(
     guildId: string,
     userId: string,
-    options: import("@omnichat/core").UnifiedMuteOptions
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+    options: import("@omnichat/core").MuteOptions
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       const durationMs = options.durationSeconds * 1000;
       await this._timeoutDiscordUser(guildId, userId, durationMs, options.reason);
@@ -3143,7 +2975,7 @@ export class DiscordAdapter implements FullAdapter {
   async unmute(
     guildId: string,
     userId: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       if (!this.client) {
         throw new Error("Discord client not initialized");
@@ -3164,7 +2996,7 @@ export class DiscordAdapter implements FullAdapter {
   async setTitle(
     channelId: string,
     title: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       await this.editChannel(channelId, { name: title });
       return { success: true };
@@ -3179,7 +3011,7 @@ export class DiscordAdapter implements FullAdapter {
   async setDescription(
     channelId: string,
     description: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       await this.editChannel(channelId, { topic: description || undefined });
       return { success: true };
@@ -3206,7 +3038,7 @@ export class DiscordAdapter implements FullAdapter {
    */
   async closeDMChannel(
     channelId: string
-  ): Promise<import("@omnichat/core").UnifiedResult<void>> {
+  ): Promise<import("@omnichat/core").Result<void>> {
     try {
       if (!this.client) {
         throw new Error("Discord client not initialized");

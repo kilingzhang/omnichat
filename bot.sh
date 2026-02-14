@@ -19,8 +19,8 @@ LOG_FILE=".bot.log"
 EXAMPLES_DIR="packages/examples"
 
 # 设置 PATH 以找到 pnpm
-export PATH="/usr/local/bin:$PATH"
-PNPM="/usr/local/bin/pnpm"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+PNPM="pnpm"
 
 # 获取 bot 进程 PID
 get_bot_pid() {

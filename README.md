@@ -13,7 +13,6 @@ Write once, run everywhere. Send and receive messages across Telegram, Discord, 
 - **🎛️ Configurable**: Fine-grained control over enabled capabilities
 - **🔧 Middleware**: Extensible message processing pipeline
 - **📝 Logging**: Built-in logging system for debugging and monitoring
-- **🔬 Validation**: Comprehensive input validation and error handling
 
 ## 📦 Installation
 
@@ -22,6 +21,47 @@ pnpm install @omnichat/core @omnichat/telegram
 ```
 
 ## 🚀 Quick Start
+
+### 1. 安装依赖
+
+```bash
+pnpm install
+```
+
+### 2. 配置环境变量
+
+在项目根目录创建 `.env` 文件：
+
+```bash
+# 单个 Telegram Bot
+BOTS=[{"id":"telegram","platform":"telegram","name":"mybot","telegram":{"apiToken":"YOUR_TELEGRAM_TOKEN"}}]
+
+# 单个 Discord Bot
+BOTS=[{"id":"discord","platform":"discord","name":"mybot","discord":{"botToken":"YOUR_DISCORD_TOKEN","clientId":"YOUR_CLIENT_ID"}}]
+
+# 多平台：同时运行 Telegram 和 Discord
+BOTS=[{"id":"telegram","platform":"telegram","name":"mybot","telegram":{"apiToken":"YOUR_TELEGRAM_TOKEN"}},{"id":"discord","platform":"discord","name":"mybot","discord":{"botToken":"YOUR_DISCORD_TOKEN","clientId":"YOUR_CLIENT_ID"}}]
+```
+
+### 3. 启动 Bot
+
+```bash
+./bot.sh start
+```
+
+### Bot 管理命令
+
+| 命令 | 说明 |
+|------|------|
+| `./bot.sh start` | 开发模式启动 |
+| `./bot.sh start:prod` | 生产模式启动 |
+| `./bot.sh stop` | 停止 bot |
+| `./bot.sh restart` | 重启 bot |
+| `./bot.sh status` | 查看状态 |
+| `./bot.sh logs -f` | 实时查看日志 |
+| `./bot.sh logs -g ERROR` | 过滤错误日志 |
+
+### SDK 使用示例
 
 ```typescript
 import { SDK } from "@omnichat/core";
@@ -45,7 +85,7 @@ await sdk.init();
 await sdk.send("telegram", {
   text: "Hello, world!",
 }, {
-  to: "user:123",
+  to: "123456789", // Chat ID
 });
 
 // Listen for messages
@@ -58,43 +98,69 @@ sdk.on(async (message) => {
 
 | Platform | Adapter Package | Status | Notes |
 |----------|----------------|--------|-------|
-| Telegram | `@omnichat/telegram` | ✅ Production Ready | Full feature support |
-| Discord | `@omnichat/discord` | ✅ Production Ready | Full feature support |
+| Telegram | `@omnichat/telegram` | ✅ Production Ready | Full feature support, 50+ methods |
+| Discord | `@omnichat/discord` | ✅ Production Ready | Full feature support, 40+ methods |
 | Slack | `@omnichat/slack` | ✅ Production Ready | Full feature support |
-| WhatsApp | `@omnichat/whatsapp` | ⚠️ Partial | Needs improvements - see [ADAPTER_STATUS.md](./docs/ADAPTER_STATUS.md) |
-| Signal | `@omnichat/signal` | 🔴 Stub | Requires external setup |
-| iMessage | `@omnichat/imessage` | 🔴 Stub | macOS only, send-only |
+| WhatsApp | `@omnichat/whatsapp` | ⚠️ Partial | Needs improvements |
+| Signal | `@omnichat/signal` | 🔴 Experimental | Stub implementation |
+| iMessage | `@omnichat/imessage` | 🔴 Experimental | macOS only, send-only |
 
+> **Note**: Focus development on Telegram and Discord adapters. Other adapters are experimental or partial.
 
-## 📋 Capabilities
+## 📨 Message Operations
 
-### Core (All Platforms)
-- ✅ Send text
-- ✅ Send media
-- ✅ Receive messages
+### Send Messages
 
-### Conversation
-- ✅ Reply to messages
-- ✅ Edit messages
-- ✅ Delete messages
-- ✅ Threads/topics (some platforms)
+```typescript
+// Send text
+await sdk.send("telegram", { text: "Hello" }, { to: "123456789" });
 
-### Interaction
-- ✅ Inline buttons
-- ✅ Reactions
-- ✅ Stickers
-- ✅ Polls (some platforms)
+// Send media
+await sdk.send("telegram", {
+  mediaUrl: "https://example.com/image.jpg",
+  mediaType: "image",
+  text: "Check this out!"
+}, { to: "123456789" });
+```
 
-### Discovery
-- 📜 Message history (some platforms)
-- 🔍 Search (some platforms)
-- 📌 Pins (some platforms)
-- 👤 Member info (some platforms)
+### Reply / Edit / Delete
 
-### Management
-- 👮 Kick users (Discord)
-- 🔨 Ban users (Discord)
-- 📢 Channel management (Discord)
+```typescript
+// Reply to a message
+await sdk.reply("telegram", chatId, messageId, { text: "I agree!" });
+
+// Edit a message
+await sdk.edit("telegram", chatId, messageId, "Updated text");
+
+// Delete a message
+await sdk.delete("telegram", chatId, messageId);
+```
+
+### Reactions
+
+```typescript
+// Add reaction
+await sdk.addReaction("telegram", chatId, messageId, "👍");
+
+// Remove reaction
+await sdk.removeReaction("telegram", chatId, messageId, "👍");
+```
+
+### Interactive Messages
+
+```typescript
+// Buttons
+await sdk.sendButtons("telegram", "123456789", "Choose one:", [
+  [{ text: "Option A", data: "a" }],
+  [{ text: "Option B", data: "b" }],
+]);
+
+// Polls
+await sdk.sendPoll("telegram", "123456789", {
+  question: "What's your favorite color?",
+  options: ["Red", "Blue", "Green"],
+});
+```
 
 ## 🎛️ Capability Detection
 
@@ -102,69 +168,20 @@ sdk.on(async (message) => {
 // Check platform capabilities
 const caps = sdk.getCapabilities("telegram");
 console.log(caps.conversation.reply);  // true
-console.log(caps.interaction.polls);   // false
 
 // Check specific capability
 const canReply = sdk.hasCapability("telegram", "conversation", "reply");  // true
-const canPoll = sdk.hasCapability("telegram", "interaction", "polls");   // false
 
 // Get all platforms with a capability
 const platformsWithButtons = sdk.getAdaptersByCapability("interaction", "buttons");
 // ["telegram", "discord"]
 ```
 
-## 📨 Message Types
-
-```typescript
-// Send text
-await sdk.send("telegram", { text: "Hello" }, { to: "user:123" });
-
-// Send media
-await sdk.send("telegram", {
-  mediaUrl: "https://example.com/image.jpg",
-  mediaType: "image",
-  text: "Check this out!"
-}, { to: "user:123" });
-
-// Reply to message
-await sdk.reply("telegram", "789", { text: "I agree!" });
-
-// Edit message
-await sdk.edit("telegram", "789", "Updated text");
-
-// Delete message
-await sdk.delete("telegram", "789");
-```
-
-## 🎯 Interactive Messages
-
-### Buttons
-```typescript
-await sdk.sendButtons("telegram", "user:123", "Choose one:", [
-  [{ text: "Option A", data: "a" }],
-  [{ text: "Option B", data: "b" }],
-]);
-```
-
-### Reactions
-```typescript
-await sdk.addReaction("telegram", "user:123:456", "👍");
-await sdk.removeReaction("telegram", "user:123:456", "👍");
-```
-
-### Polls
-```typescript
-await sdk.sendPoll("telegram", "channel:123", {
-  question: "What's your favorite color?",
-  options: ["Red", "Blue", "Green"],
-});
-```
-
 ## 🔌 Creating a Custom Adapter
 
 ```typescript
 import { FullAdapter, Logger, LogLevel } from "@omnichat/core";
-import { parseMessageId, validateRequired, safeExecute } from "@omnichat/core";
+import { validateRequired, safeExecute } from "@omnichat/core";
 
 class MyAdapter implements FullAdapter {
   readonly platform = "myplatform";
@@ -176,16 +193,11 @@ class MyAdapter implements FullAdapter {
 
   async init(config) {
     this.logger.info("Initializing adapter...");
-    // Initialize your platform
   }
 
   async send(target, content, options) {
-    // Validate inputs
     validateRequired(target, "target");
-
-    // Send with error handling
     return safeExecute(this.logger, "send message", async () => {
-      // Your send logic here
       return {
         platform: this.platform,
         messageId: "123",
@@ -195,9 +207,7 @@ class MyAdapter implements FullAdapter {
     });
   }
 
-  onMessage(callback) {
-    // Register message handler
-  }
+  onMessage(callback) {}
 
   getCapabilities() {
     return {
@@ -211,22 +221,17 @@ class MyAdapter implements FullAdapter {
 
   async destroy() {
     this.logger.info("Destroying adapter...");
-    // Cleanup
   }
 }
 ```
 
 ## 📝 Logging
 
-The SDK includes a built-in logging system with multiple levels:
-
 ```typescript
 import { Logger, LogLevel } from "@omnichat/core";
 
-// Create a logger
 const logger = new Logger("MyBot", LogLevel.DEBUG);
 
-// Log at different levels
 logger.debug("Detailed debugging info");
 logger.info("General information");
 logger.warn("Warning message");
@@ -237,51 +242,22 @@ const childLogger = logger.child("Database");
 childLogger.info("Connected to database");
 
 // Change log level
-logger.setLevel(LogLevel.ERROR); // Only show errors
+logger.setLevel(LogLevel.ERROR);
 ```
 
-## 🛠️ Utility Functions
+## 🔑 获取 Bot Token
 
-The SDK provides utility functions for common adapter operations:
+### Telegram
+1. 找到 [@BotFather](https://t.me/BotFather)
+2. 发送 `/newbot` 创建新 bot
+3. 复制获得的 token
 
-```typescript
-import {
-  parseMessageId,
-  validateRequired,
-  validateAtLeastOne,
-  safeExecute,
-  withRetry,
-  truncateText,
-  formatError,
-} from "@omnichat/core";
-
-// Parse compound messageId
-const { chatId, msgId } = parseMessageId("channel:123:456");
-
-// Validate required fields
-validateRequired(token, "apiToken");
-
-// Validate at least one field is present
-validateAtLeastOne(content, ["text", "mediaUrl", "stickerId"]);
-
-// Execute with error handling
-await safeExecute(logger, "send message", async () => {
-  // Your code here
-});
-
-// Retry with exponential backoff
-await withRetry(
-  async () => await api.call(),
-  3, // max retries
-  1000 // initial delay
-);
-
-// Truncate text for logging
-const short = truncateText(longText, 50);
-
-// Format error with context
-throw formatError("Failed to send message", { userId, channelId });
-```
+### Discord
+1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
+2. 创建新应用程序
+3. 创建 bot 并获取 token
+4. 启用 Message Content Intent
+5. 记录 Application ID（作为 CLIENT_ID）
 
 ## 🛠️ Development
 
@@ -292,46 +268,100 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run example
-cd packages/examples
-pnpm dev
+# Run tests
+pnpm test
+
+# Run integration tests (requires API tokens)
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx pnpm vitest run --config vitest.integration.config.ts
+
+# Run examples
+./bot.sh start
 ```
 
-## 📖 Documentation
+## 🧪 Testing
 
-- [Quick Start](./docs/QUICK_START.md) - Get started quickly
-- [Contributing](./docs/CONTRIBUTING.md) - Contribution guidelines
-- [Adapter Status](./docs/ADAPTER_STATUS.md) - Platform support status
-- [Security](./docs/SECURITY.md) - Security guidelines
-- [Changelog](./docs/CHANGELOG.md) - Version history
+### Unit Tests
+
+```bash
+pnpm test
+```
+
+### Integration Tests
+
+Integration tests require real API tokens:
+
+```bash
+# Telegram integration tests
+TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx TELEGRAM_USER_ID=xxx \
+  pnpm vitest run packages/adapters/telegram/integration/ --config vitest.integration.config.ts
+
+# Discord integration tests
+DISCORD_BOT_TOKEN=xxx DISCORD_CHANNEL_ID=xxx DISCORD_GUILD_ID=xxx \
+  pnpm vitest run packages/adapters/discord/integration/ --config vitest.integration.config.ts
+```
 
 ## 📂 Project Structure
 
 ```
 omnichat/
+├── bot.sh              # Bot 管理脚本
 ├── packages/
-│   ├── core/              # Core SDK
-│   ├── adapters/          # Platform adapters
-│   │   ├── telegram/
-│   │   ├── discord/
-│   │   ├── slack/
-│   │   └── ...
-│   └── examples/          # Usage examples
-├── docs/                  # Documentation
+│   ├── core/           # Core SDK
+│   │   ├── src/
+│   │   │   ├── core/          # SDK 核心逻辑
+│   │   │   ├── models/        # 统一模型定义
+│   │   │   ├── utils/         # 工具函数
+│   │   │   └── index.ts       # 公共 API 导出
+│   │   └── package.json
+│   ├── adapters/       # Platform adapters
+│   │   ├── telegram/          # Telegram 适配器 (50+ 方法)
+│   │   │   ├── src/
+│   │   │   │   ├── adapter.ts
+│   │   │   │   └── adapter.test.ts
+│   │   │   └── integration/   # 集成测试
+│   │   ├── discord/           # Discord 适配器 (40+ 方法)
+│   │   │   ├── src/
+│   │   │   │   ├── adapter.ts
+│   │   │   │   └── adapter.test.ts
+│   │   │   └── integration/   # 集成测试
+│   │   ├── slack/             # Slack 适配器
+│   │   ├── whatsapp/          # WhatsApp 适配器 (部分支持)
+│   │   ├── signal/            # Signal 适配器 (实验性)
+│   │   └── imessage/          # iMessage 适配器 (实验性)
+│   └── examples/       # Usage examples
+│       └── src/
+│           └── bots/
+│               └── group-assistant/  # 统一 Bot 示例
 ├── package.json
-└── pnpm-workspace.yaml
+├── pnpm-workspace.yaml
+├── vitest.config.ts           # 单元测试配置
+└── vitest.integration.config.ts # 集成测试配置
 ```
 
-## 🤝 Contributing
+## 🎛️ Capabilities System
 
-See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for details.
+Each adapter exposes its capabilities through `getCapabilities()`:
 
-To add a new platform:
+```typescript
+const caps = adapter.getCapabilities();
+// Returns:
+{
+  base: { sendText, sendMedia, receive },
+  conversation: { reply, edit, delete, threads, quote },
+  interaction: { buttons, polls, reactions, stickers, effects },
+  discovery: { history, search, pins, memberInfo, channelInfo },
+  management: { kick, ban, mute, timeout, channelCreate, channelEdit, channelDelete, permissions },
+  advanced: { webhooks, threads, roles, invites, ... }
+}
+```
 
-1. Create a new adapter package under `packages/adapters/`
-2. Implement the `FullAdapter` interface
-3. Declare capabilities in `getCapabilities()`
-4. Test thoroughly
+Check capabilities at runtime:
+
+```typescript
+if (sdk.hasCapability("telegram", "interaction", "polls")) {
+  await sdk.sendPoll("telegram", chatId, { question: "...", options: [...] });
+}
+```
 
 ## 📄 License
 
